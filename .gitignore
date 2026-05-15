@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.local
+html/
+data/*.csv
+data/*.xlsx
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+celerybeat-schedule
+*.egg-info/
+dist/
+build/
