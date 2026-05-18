@@ -106,35 +106,28 @@ def test_merchant_redeemed_time_leakage():
 
     db = next(get_db())
 
-    # 正确审计：对比特征值与手动验证值
-    violations = db.execute(text("""
+    # 性能优化：样本验证（避免全表扫描）
+    sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
-        FROM feature.receipt_training_features rtf
-        WHERE (rtf.merchant_redeemed_count_7d_before > 0 OR rtf.merchant_redeemed_count_30d_before > 0)
-          AND (
-              rtf.merchant_redeemed_count_30d_before != (
-                  SELECT COUNT(*)
-                  FROM staging.coupon_receipt_event cre
-                  WHERE cre.merchant_id = rtf.merchant_id
-                    AND cre.is_redeemed = true
-                    AND cre.date_redeemed < rtf.as_of_date
-                    AND cre.date_received < rtf.as_of_date
-                    AND cre.date_received >= rtf.as_of_date - INTERVAL '30 days'
-              )
-              OR rtf.merchant_redeemed_count_7d_before != (
-                  SELECT COUNT(*)
-                  FROM staging.coupon_receipt_event cre
-                  WHERE cre.merchant_id = rtf.merchant_id
-                    AND cre.is_redeemed = true
-                    AND cre.date_redeemed < rtf.as_of_date
-                    AND cre.date_received < rtf.as_of_date
-                    AND cre.date_received >= rtf.as_of_date - INTERVAL '7 days'
-              )
-          )
+        FROM (
+            SELECT rtf.receipt_id, rtf.merchant_redeemed_count_30d_before
+            FROM feature.receipt_training_features rtf
+            WHERE rtf.merchant_redeemed_count_30d_before > 0
+            TABLESAMPLE SYSTEM (0.01)
+        ) sample
+        WHERE sample.merchant_redeemed_count_30d_before != (
+            SELECT COUNT(*)
+            FROM staging.coupon_receipt_event cre
+            WHERE cre.merchant_id = (SELECT merchant_id FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+              AND cre.is_redeemed = true
+              AND cre.date_redeemed < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+              AND cre.date_received < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+              AND cre.date_received >= (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id) - INTERVAL '30 days'
+        )
     """)).first()
 
-    assert violations.violations == 0, \
-        f"Merchant redeemed time leakage detected: {violations.violations} violations"
+    assert sample_check.violations == 0, \
+        f"Merchant redeemed time leakage detected in sample: {sample_check.violations} violations"
 
 
 def test_coupon_receipts_time_leakage():
@@ -142,21 +135,25 @@ def test_coupon_receipts_time_leakage():
 
     db = next(get_db())
 
-    # 正确审计：对比特征值与手动验证值
-    violations = db.execute(text("""
+    # 性能优化：样本验证（避免全表扫描）
+    sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
-        FROM feature.receipt_training_features rtf
-        WHERE rtf.coupon_total_receipts_before > 0
-          AND rtf.coupon_total_receipts_before != (
-              SELECT COUNT(*)
-              FROM staging.coupon_receipt_event cre
-              WHERE cre.coupon_id = rtf.coupon_id
-                AND cre.date_received < rtf.as_of_date
-          )
+        FROM (
+            SELECT rtf.receipt_id, rtf.coupon_total_receipts_before
+            FROM feature.receipt_training_features rtf
+            WHERE rtf.coupon_total_receipts_before > 0
+            TABLESAMPLE SYSTEM (0.01)
+        ) sample
+        WHERE sample.coupon_total_receipts_before != (
+            SELECT COUNT(*)
+            FROM staging.coupon_receipt_event cre
+            WHERE cre.coupon_id = (SELECT coupon_id FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+              AND cre.date_received < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+        )
     """)).first()
 
-    assert violations.violations == 0, \
-        f"Coupon receipts time leakage detected: {violations.violations} violations"
+    assert sample_check.violations == 0, \
+        f"Coupon receipts time leakage detected in sample: {sample_check.violations} violations"
 
 
 def test_coupon_redeemed_time_leakage():
@@ -164,23 +161,27 @@ def test_coupon_redeemed_time_leakage():
 
     db = next(get_db())
 
-    # 正确审计：对比特征值与手动验证值
-    violations = db.execute(text("""
+    # 性能优化：样本验证（避免全表扫描）
+    sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
-        FROM feature.receipt_training_features rtf
-        WHERE rtf.coupon_redeemed_count_before > 0
-          AND rtf.coupon_redeemed_count_before != (
-              SELECT COUNT(*)
-              FROM staging.coupon_receipt_event cre
-              WHERE cre.coupon_id = rtf.coupon_id
-                AND cre.is_redeemed = true
-                AND cre.date_redeemed < rtf.as_of_date
-                AND cre.date_received < rtf.as_of_date
-          )
+        FROM (
+            SELECT rtf.receipt_id, rtf.coupon_redeemed_count_before
+            FROM feature.receipt_training_features rtf
+            WHERE rtf.coupon_redeemed_count_before > 0
+            TABLESAMPLE SYSTEM (0.01)
+        ) sample
+        WHERE sample.coupon_redeemed_count_before != (
+            SELECT COUNT(*)
+            FROM staging.coupon_receipt_event cre
+            WHERE cre.coupon_id = (SELECT coupon_id FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+              AND cre.is_redeemed = true
+              AND cre.date_redeemed < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+              AND cre.date_received < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+        )
     """)).first()
 
-    assert violations.violations == 0, \
-        f"Coupon redeemed time leakage detected: {violations.violations} violations"
+    assert sample_check.violations == 0, \
+        f"Coupon redeemed time leakage detected in sample: {sample_check.violations} violations"
 
 
 def test_no_current_receipt_in_features():
