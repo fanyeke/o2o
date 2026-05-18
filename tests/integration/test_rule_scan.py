@@ -24,6 +24,11 @@ from app.domain.feature.user_metrics import UserMetrics
 from app.domain.feature.coupon_metrics import CouponMetrics
 from app.domain.application.decision_case import DecisionCase
 from app.domain.staging.coupon_receipt_event import CouponReceiptEvent
+from app.core.config import get_settings
+
+# Get rules directory from configuration (respects environment settings)
+_settings = get_settings()
+RULES_DIR = _settings.get_rules_dir()
 
 
 class TestMerchantRuleScanning:
@@ -54,7 +59,7 @@ class TestMerchantRuleScanning:
         clean_db.commit()
 
         # Load rules from config directory
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
 
         # Filter merchant rules
@@ -100,7 +105,7 @@ class TestMerchantRuleScanning:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -137,7 +142,7 @@ class TestMerchantRuleScanning:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -203,7 +208,7 @@ class TestMerchantRuleScanning:
         clean_db.bulk_save_objects(merchants)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -234,7 +239,7 @@ class TestMerchantRuleScanning:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -269,7 +274,7 @@ class TestMerchantRuleScanning:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -309,7 +314,7 @@ class TestCreateDecisionCases:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -357,7 +362,7 @@ class TestCreateDecisionCases:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -401,7 +406,7 @@ class TestCreateDecisionCases:
         clean_db.bulk_save_objects(merchants)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -439,7 +444,7 @@ class TestCreateDecisionCases:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -475,7 +480,7 @@ class TestCreateDecisionCases:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -531,7 +536,7 @@ class TestRuleScanWorkflow:
         clean_db.commit()
 
         # Step 1: Load rules from YAML files
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -576,7 +581,7 @@ class TestRuleScanWorkflow:
         clean_db.commit()
 
         # Load only specific rule
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir, rule_ids=["merchant_redeemed_rate_drop"])
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -607,7 +612,7 @@ class TestRuleScanWorkflow:
         clean_db.commit()
 
         # Load rules with filter that returns no rules
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir, rule_ids=["nonexistent_rule"])
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -631,7 +636,7 @@ class TestRuleScannerEdgeCases:
         """Verify behavior when merchant metrics table is empty."""
         # No merchant metrics in database
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -663,7 +668,7 @@ class TestRuleScannerEdgeCases:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 
@@ -701,7 +706,7 @@ class TestRuleScannerEdgeCases:
         clean_db.add(merchant_metrics)
         clean_db.commit()
 
-        rules_dir = Path("/home/zzz/project/o2o/config/rules")
+        rules_dir = RULES_DIR
         rules = load_rules(rules_dir)
         merchant_rules = [r for r in rules if r.entity_type == "merchant"]
 

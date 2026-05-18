@@ -32,8 +32,8 @@ def test_cannot_approve_pending_case(test_db):
 
     # Create a case with status='pending'
     test_db.execute(text("""
-        INSERT INTO application.decision_case (id, case_type, entity_id, severity_level, status, created_at)
-        VALUES ('test_case_001', 'merchant', 'm001', 'medium', 'pending', NOW())
+        INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
+        VALUES ('test_case_001', '商户异常', 'm001', 'medium', 'pending', NOW())
         ON CONFLICT (id) DO NOTHING
     """))
     test_db.commit()
@@ -58,14 +58,14 @@ def test_approve_creates_approval_log(test_db):
 
     # Create a case with status='recommended' and recommendation
     test_db.execute(text("""
-        INSERT INTO application.decision_case (id, case_type, entity_id, severity_level, status, created_at)
-        VALUES ('test_case_002', 'merchant', 'm002', 'medium', 'recommended', NOW())
+        INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
+        VALUES ('test_case_002', '商户异常', 'm002', 'medium', 'recommended', NOW())
         ON CONFLICT (id) DO UPDATE SET status='recommended'
     """))
 
     test_db.execute(text("""
-        INSERT INTO application.recommendation (id, case_id, decision_summary, suggested_actions, confidence_score, created_at)
-        VALUES ('rec_002', 'test_case_002', 'Test recommendation', '[{"type": "no_action"}]', 0.5, NOW())
+        INSERT INTO application.recommendation (id, case_id, summary, evidence_list, suggested_actions, confidence_score, requires_approval, created_at)
+        VALUES ('rec_002', 'test_case_002', 'Test recommendation', '[]', '[{"type": "no_action"}]', 0.5, true, NOW())
         ON CONFLICT (id) DO NOTHING
     """))
     test_db.commit()
@@ -111,14 +111,14 @@ def test_reject_does_not_execute(test_db):
 
     # Create a case with status='recommended'
     test_db.execute(text("""
-        INSERT INTO application.decision_case (id, case_type, entity_id, severity_level, status, created_at)
-        VALUES ('test_case_003', 'merchant', 'm003', 'medium', 'recommended', NOW())
+        INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
+        VALUES ('test_case_003', '商户异常', 'm003', 'medium', 'recommended', NOW())
         ON CONFLICT (id) DO UPDATE SET status='recommended'
     """))
 
     test_db.execute(text("""
-        INSERT INTO application.recommendation (id, case_id, decision_summary, suggested_actions, confidence_score, created_at)
-        VALUES ('rec_003', 'test_case_003', 'Test recommendation', '[{"type": "no_action"}]', 0.5, NOW())
+        INSERT INTO application.recommendation (id, case_id, summary, evidence_list, suggested_actions, confidence_score, requires_approval, created_at)
+        VALUES ('rec_003', 'test_case_003', 'Test recommendation', '[]', '[{"type": "no_action"}]', 0.5, true, NOW())
         ON CONFLICT (id) DO NOTHING
     """))
     test_db.commit()
@@ -179,15 +179,15 @@ def test_unknown_action_type_fails(test_db):
 
     # Create a case with invalid action type
     test_db.execute(text("""
-        INSERT INTO application.decision_case (id, case_type, entity_id, severity_level, status, created_at)
-        VALUES ('test_case_004', 'merchant', 'm004', 'medium', 'recommended', NOW())
+        INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
+        VALUES ('test_case_004', '商户异常', 'm004', 'medium', 'recommended', NOW())
         ON CONFLICT (id) DO UPDATE SET status='recommended'
     """))
 
     test_db.execute(text("""
-        INSERT INTO application.recommendation (id, case_id, decision_summary, suggested_actions, confidence_score, created_at)
-        VALUES ('rec_004', 'test_case_004', 'Test recommendation',
-                '[{"type": "invalid_action_type", "params": {}}]', 0.5, NOW())
+        INSERT INTO application.recommendation (id, case_id, summary, evidence_list, suggested_actions, confidence_score, requires_approval, created_at)
+        VALUES ('rec_004', 'test_case_004', 'Test recommendation', '[]',
+                '[{"type": "invalid_action_type", "params": {}}]', 0.5, true, NOW())
         ON CONFLICT (id) DO NOTHING
     """))
     test_db.commit()
