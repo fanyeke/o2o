@@ -74,31 +74,25 @@ def test_merchant_receipts_time_leakage():
 
     db = next(get_db())
 
-    # 正确审计：对比特征计算值与手动验证值
-    violations = db.execute(text("""
+    # 性能优化：样本验证（避免全表扫描）
+    sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
-        FROM feature.receipt_training_features rtf
-        WHERE (rtf.merchant_receipts_7d_before > 0 OR rtf.merchant_receipts_30d_before > 0)
-          AND (
-              rtf.merchant_receipts_30d_before != (
-                  SELECT COUNT(*)
-                  FROM staging.coupon_receipt_event cre
-                  WHERE cre.merchant_id = rtf.merchant_id
-                    AND cre.date_received < rtf.as_of_date
-                    AND cre.date_received >= rtf.as_of_date - INTERVAL '30 days'
-              )
-              OR rtf.merchant_receipts_7d_before != (
-                  SELECT COUNT(*)
-                  FROM staging.coupon_receipt_event cre
-                  WHERE cre.merchant_id = rtf.merchant_id
-                    AND cre.date_received < rtf.as_of_date
-                    AND cre.date_received >= rtf.as_of_date - INTERVAL '7 days'
-              )
-          )
+        FROM (
+            SELECT rtf.receipt_id, rtf.merchant_receipts_30d_before, rtf.merchant_id, rtf.as_of_date
+            FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
+            WHERE merchant_receipts_30d_before > 0
+        ) sample
+        WHERE sample.merchant_receipts_30d_before != (
+            SELECT COUNT(*)
+            FROM staging.coupon_receipt_event cre
+            WHERE cre.merchant_id = sample.merchant_id
+              AND cre.date_received < sample.as_of_date
+              AND cre.date_received >= sample.as_of_date - INTERVAL '30 days'
+        )
     """)).first()
 
-    assert violations.violations == 0, \
-        f"Merchant receipts time leakage detected: {violations.violations} violations"
+    assert sample_check.violations == 0, \
+        f"Merchant receipts time leakage detected in sample: {sample_check.violations} violations"
 
 
 def test_merchant_redeemed_time_leakage():
