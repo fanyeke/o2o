@@ -133,36 +133,33 @@ class PredictService:
         features["month"] = float(receipt_event.date_received.month)
         features["day_of_month"] = float(receipt_event.date_received.day)
 
-        # User metrics
-        features["user_total_receipts_30d"] = float(user_metrics.total_receipts_30d or 0)
-        features["user_redeemed_count_30d"] = float(user_metrics.redeemed_count_30d or 0)
-        features["user_redeemed_rate_30d"] = float(user_metrics.redeemed_rate_30d or 0.0)
-        features["user_avg_distance"] = float(user_metrics.avg_distance or 0.0)
+        # User metrics (time-safe naming convention: *_before suffix)
+        features["user_receipts_30d_before"] = float(user_metrics.total_receipts_30d or 0)
+        features["user_redeemed_count_30d_before"] = float(user_metrics.redeemed_count_30d or 0)
+        features["user_redeemed_rate_30d_before"] = float(user_metrics.redeemed_rate_30d or 0.0)
+        features["user_avg_distance_before"] = float(user_metrics.avg_distance or 0.0)
 
-        # Merchant metrics
-        features["merchant_total_receipts_7d"] = float(merchant_metrics.total_receipts_7d or 0)
-        features["merchant_redeemed_count_7d"] = float(merchant_metrics.redeemed_count_7d or 0)
-        features["merchant_redeemed_rate_7d"] = float(merchant_metrics.redeemed_rate_7d or 0.0)
-        features["merchant_total_receipts_30d"] = float(merchant_metrics.total_receipts_30d or 0)
-        features["merchant_redeemed_count_30d"] = float(merchant_metrics.redeemed_count_30d or 0)
-        features["merchant_redeemed_rate_30d"] = float(merchant_metrics.redeemed_rate_30d or 0.0)
-        features["merchant_redeemed_rate_change"] = float(merchant_metrics.redeemed_rate_change or 0.0)
-        features["merchant_avg_discount_depth"] = float(merchant_metrics.avg_discount_depth or 0.0)
+        # Merchant metrics (time-safe naming convention: *_before suffix)
+        features["merchant_receipts_7d_before"] = float(merchant_metrics.total_receipts_7d or 0)
+        features["merchant_redeemed_count_7d_before"] = float(merchant_metrics.redeemed_count_7d or 0)
+        features["merchant_redeemed_rate_7d_before"] = float(merchant_metrics.redeemed_rate_7d or 0.0)
+        features["merchant_receipts_30d_before"] = float(merchant_metrics.total_receipts_30d or 0)
+        features["merchant_redeemed_count_30d_before"] = float(merchant_metrics.redeemed_count_30d or 0)
+        features["merchant_redeemed_rate_30d_before"] = float(merchant_metrics.redeemed_rate_30d or 0.0)
+        features["merchant_avg_discount_depth_before"] = float(merchant_metrics.avg_discount_depth or 0.0)
 
-        # Coupon metrics (optional)
+        # Coupon metrics (time-safe naming convention: *_before suffix)
         if coupon_metrics:
-            features["coupon_total_receipts"] = float(coupon_metrics.total_receipts or 0)
-            features["coupon_redeemed_count"] = float(coupon_metrics.redeemed_count or 0)
-            features["coupon_redeemed_rate"] = float(coupon_metrics.redeemed_rate or 0.0)
-            features["coupon_avg_redeem_days"] = float(coupon_metrics.avg_redeem_days or 0.0)
-            features["coupon_discount_value"] = float(coupon_metrics.discount_value or 0.0)
+            features["coupon_total_receipts_before"] = float(coupon_metrics.total_receipts or 0)
+            features["coupon_redeemed_count_before"] = float(coupon_metrics.redeemed_count or 0)
+            features["coupon_redeemed_rate_before"] = float(coupon_metrics.redeemed_rate or 0.0)
+            features["coupon_avg_redeem_days_before"] = float(coupon_metrics.avg_redeem_days or 0.0)
         else:
             # Use default values for missing coupon metrics
-            features["coupon_total_receipts"] = 0.0
-            features["coupon_redeemed_count"] = 0.0
-            features["coupon_redeemed_rate"] = 0.0
-            features["coupon_avg_redeem_days"] = 0.0
-            features["coupon_discount_value"] = 0.0
+            features["coupon_total_receipts_before"] = 0.0
+            features["coupon_redeemed_count_before"] = 0.0
+            features["coupon_redeemed_rate_before"] = 0.0
+            features["coupon_avg_redeem_days_before"] = 0.0
 
         # Build feature vector in the same order as training
         feature_vector: list[float] = []

@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.tasks.clean_data",
         "app.tasks.agent_decision",
         "app.tasks.rule_scan",
+        "app.tasks.action_executor",  # M5: Async action execution
     ],
 )
 
@@ -37,5 +38,14 @@ celery_app.conf.update(
             "schedule": 86400.0,
             "options": {"queue": "default"},
         },
+        # M5: Process pending action executions every minute
+        "process-pending-actions": {
+            "task": "app.tasks.action_executor.process_pending_executions",
+            "schedule": 60.0,  # Every minute
+            "options": {"queue": "action"},
+        },
+    },
+    task_routes={
+        "app.tasks.action_executor.*": {"queue": "action"},
     },
 )

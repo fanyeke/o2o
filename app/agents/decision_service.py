@@ -9,6 +9,8 @@ This service orchestrates the agent decision flow:
 """
 
 import logging
+import re
+import json
 from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -112,6 +114,10 @@ class AgentDecisionService:
             risk_alerts=parsed_recommendation.get("risk_alerts"),
             confidence_score=parsed_recommendation["confidence_score"],
             requires_approval=parsed_recommendation["requires_approval"],
+            # M4 High Standard: New fields
+            model_signal=parsed_recommendation.get("model_signal"),
+            business_risk=parsed_recommendation.get("business_risk"),
+            limitations=parsed_recommendation.get("limitations"),
             tool_trace=tool_trace,
             llm_raw_output=str(llm_response),
             llm_tokens_used=tokens_used,
@@ -161,6 +167,15 @@ class AgentDecisionService:
                 )
                 results["coupon_conversion"] = coupon_conversion
 
+                # M4 High Standard: Get prediction summary
+                try:
+                    prediction_summary = execute_tool(
+                        self.db, "get_prediction_summary", merchant_id=case.merchant_id
+                    )
+                    results["get_prediction_summary"] = prediction_summary
+                except Exception as e:
+                    logger.warning(f"Prediction summary tool failed: {e}")
+
             except Exception as e:
                 logger.error(f"Tool execution failed: {e}")
 
@@ -177,6 +192,15 @@ class AgentDecisionService:
                     self.db, "get_recent_receipts", user_id=case.user_id, limit=10
                 )
                 results["recent_receipts"] = recent_receipts
+
+                # M4 High Standard: Get prediction summary for user
+                try:
+                    prediction_summary = execute_tool(
+                        self.db, "get_prediction_summary", user_id=case.user_id
+                    )
+                    results["get_prediction_summary"] = prediction_summary
+                except Exception as e:
+                    logger.warning(f"Prediction summary tool failed: {e}")
 
             except Exception as e:
                 logger.error(f"Tool execution failed: {e}")
@@ -221,7 +245,7 @@ def parse_recommendation(llm_output: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If output is invalid or missing required fields
     """
-    # Check required fields
+    # Check required fields (basic fields)
     required_fields = [
         "summary",
         "evidence_list",
@@ -234,15 +258,18 @@ def parse_recommendation(llm_output: Dict[str, Any]) -> Dict[str, Any]:
         if field not in llm_output:
             raise ValueError(f"Missing required field: {field}")
 
-    # Validate evidence list
+    # Validate evidence list (M4 High Standard: >= 4)
     evidence_list = llm_output["evidence_list"]
 
     if not isinstance(evidence_list, list):
         raise ValueError("evidence_list must be a list")
 
-    if len(evidence_list) < 3:
+    # Updated: Require at least 4 evidence items (M4 High Standard)
+    MIN_EVIDENCE_COUNT = 4
+    if len(evidence_list) < MIN_EVIDENCE_COUNT:
         raise ValueError(
-            f"At least 3 evidence items required, got {len(evidence_list)}"
+            f"At least {MIN_EVIDENCE_COUNT} evidence items required (M4 High Standard), "
+            f"got {len(evidence_list)}"
         )
 
     # Validate each evidence item
@@ -291,8 +318,8 @@ def parse_recommendation(llm_output: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(requires_approval, bool):
         raise ValueError("requires_approval must be a boolean")
 
-    # Return validated recommendation
-    return {
+    # Return validated recommendation with new fields preserved
+    result = {
         "summary": str(llm_output["summary"]),
         "evidence_list": evidence_list,
         "suggested_actions": suggested_actions,
@@ -300,6 +327,20 @@ def parse_recommendation(llm_output: Dict[str, Any]) -> Dict[str, Any]:
         "confidence_score": float(confidence_score),
         "requires_approval": requires_approval,
     }
+
+    # Preserve new M4 fields (model_signal, business_risk, limitations)
+    if "model_signal" in llm_output:
+        result["model_signal"] = llm_output["model_signal"]
+
+    if "business_risk" in llm_output:
+        result["business_risk"] = llm_output["business_risk"]
+
+    if "limitations" in llm_output:
+        limitations = llm_output["limitations"]
+        if isinstance(limitations, list):
+            result["limitations"] = limitations
+
+    return result
 
 
 # Convenience function for Celery task
@@ -315,3 +356,58 @@ def generate_recommendation(db: Session, case_id: int) -> Optional[Recommendatio
     """
     service = AgentDecisionService(db)
     return service.generate_recommendation(case_id)
+
+
+# M7 Observability: LLM output sanitization patterns
+# Patterns designed to preserve JSON structure while masking sensitive values
+SENSITIVE_PATTERNS = [
+    # API keys and tokens - preserve JSON key, mask value
+    (r'"(?:api_key|apikey|api-key)"\s*:\s*"(sk-[a-zA-Z0-9_-]{20,})"', r'"api_key": "***REDACTED***"'),
+    (r'"(?:api_key|apikey|api-key)"\s*:\s*"([a-zA-Z0-9_-]{5,})"', r'"api_key": "***REDACTED***"'),
+    (r'"(?:token|access_token)"\s*:\s*"([a-zA-Z0-9_-]{5,})"', r'"token": "***REDACTED***"'),
+    (r'"(?:password|passwd|pwd)"\s*:\s*"([a-zA-Z0-9_-]{5,})"', r'"password": "***REDACTED***"'),
+    (r'"(?:secret|secret_key)"\s*:\s*"([a-zA-Z0-9_-]{5,})"', r'"secret": "***REDACTED***"'),
+    # Standalone API keys (not in JSON context)
+    (r'sk-[a-zA-Z0-9_-]{20,}', 'sk-***REDACTED***'),
+    (r'ghp_[a-zA-Z0-9]{20,}', 'ghp_***REDACTED***'),
+    # Chinese phone numbers
+    (r'1[3-9]\d{9}', '1**********'),
+    (r'\d{3,4}-\d{7,8}', '****-*******'),
+    # Chinese ID card numbers (18 digits)
+    (r'\d{17}[\dXx]', '******************'),
+    # Credit card numbers
+    (r'\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}', '****-****-****-****'),
+]
+
+
+def sanitize_llm_output(raw_output: str) -> str:
+    """Sanitize LLM output to remove sensitive data.
+
+    This function masks sensitive information in LLM raw output
+    before storing in database for audit trail.
+
+    Patterns sanitized:
+    - API keys (OpenAI, GitHub, etc.)
+    - Passwords and secrets
+    - Phone numbers (Chinese format)
+    - ID card numbers
+    - Credit card numbers
+
+    The function preserves JSON structure when sanitizing JSON values.
+
+    Args:
+        raw_output: Raw LLM output string
+
+    Returns:
+        Sanitized output with sensitive data masked
+
+    Example:
+        >>> sanitize_llm_output('{"api_key": "sk-xxxxx", "summary": "test"}')
+        '{"api_key": "***REDACTED***", "summary": "test"}'
+    """
+    sanitized = raw_output
+
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        sanitized = re.sub(pattern, replacement, sanitized)
+
+    return sanitized

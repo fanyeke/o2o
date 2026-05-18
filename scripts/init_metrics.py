@@ -79,10 +79,10 @@ def step_clean_data():
     db = next(get_db())
     try:
         service = DataCleaningService(db)
-        result = service.transform_all()
+        result = service.clean_all_data()
 
         logger.info(f"✓ Data cleaning completed:")
-        logger.info(f"  - Coupon receipt events: {result['coupon_receipt_events']}")
+        logger.info(f"  - Coupon receipt events: {result['receipt_events']}")
         logger.info(f"  - Consumption events: {result['consumption_events']}")
         return True
     except Exception as e:

@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     rules_dir: str = "config/rules"
 
     model_config = {
-        "env_file": ".env",  # Unified .env file (not .env.dev)
+        "env_file": ".env.test" if os.getenv("APP_ENV") == "test" else ".env",
         "env_file_encoding": "utf-8",
         "extra": "ignore",  # Ignore extra env vars
     }

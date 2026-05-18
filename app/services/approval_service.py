@@ -3,30 +3,53 @@
 Task: T086-T087
 Phase: 4 - US1 Approval Callback Flow
 
+M5 High-Standard Updates:
+- Async execution via Celery
+- Complete state machine: recommended->approved->action_pending->action_running->executed/action_failed
+- Idempotency key for duplicate prevention
+- Retry support for failed actions
+
 Responsibilities:
 - Process approval/reject actions
 - Update decision case status
 - Create approval logs
-- Trigger mock action execution if approved
+- Dispatch async action execution via Celery
 - Handle concurrent approval conflicts (optimistic locking)
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.domain.application.decision_case import DecisionCase
 from app.domain.application.recommendation import Recommendation
 from app.domain.application.approval_log import ApprovalLog
+from app.domain.application.action_execution import ActionExecution
 from app.repositories.action_execution_repository import ActionExecutionRepository
-from app.services.mock_action_service import MockActionService
 
 logger = logging.getLogger(__name__)
 
 
+def utcnow():
+    """Return current UTC datetime (timezone-aware)."""
+    return datetime.now(timezone.utc)
+
+
 class ApprovalService:
-    """Service for processing approval callbacks."""
+    """Service for processing approval callbacks with async execution."""
+
+    # Valid state transitions (M5 state machine)
+    VALID_TRANSITIONS = {
+        "recommended": ["approved", "rejected"],
+        "approved": ["action_pending"],
+        "action_pending": ["action_running", "action_failed"],
+        "action_running": ["executed", "action_failed", "timeout"],
+        "action_failed": ["action_pending"],  # Retry
+        "timeout": ["action_pending"],  # Retry
+        "executed": [],  # Terminal state
+        "rejected": [],  # Terminal state
+    }
 
     def __init__(self, db: Session):
         """Initialize service.
@@ -36,28 +59,27 @@ class ApprovalService:
         """
         self.db = db
         self.action_repo = ActionExecutionRepository(db)
-        self.mock_action_service = MockActionService(db)
 
     def approve_case(
         self,
-        case_id: str,
+        case_id: int,
         approver_id: str,
         approval_comment: Optional[str] = None,
     ) -> dict:
-        """Approve a decision case.
+        """Approve a decision case and dispatch async action execution.
 
         Convenience method for approval workflow.
 
         Args:
-            case_id: Decision case ID (string for compatibility with tests)
+            case_id: Decision case ID
             approver_id: Approver ID
             approval_comment: Approval comment
 
         Returns:
-            Processing result
+            Processing result with new status
         """
         return self.process_approval(
-            case_id=int(case_id) if isinstance(case_id, str) else case_id,
+            case_id=case_id,
             action_type="approve",
             operator_id=approver_id,
             operator_name=None,
@@ -66,24 +88,24 @@ class ApprovalService:
 
     def reject_case(
         self,
-        case_id: str,
+        case_id: int,
         approver_id: str,
         rejection_reason: Optional[str] = None,
     ) -> dict:
-        """Reject a decision case.
+        """Reject a decision case - no action execution.
 
         Convenience method for rejection workflow.
 
         Args:
-            case_id: Decision case ID (string for compatibility with tests)
+            case_id: Decision case ID
             approver_id: Approver ID
             rejection_reason: Rejection reason
 
         Returns:
-            Processing result
+            Processing result with new status
         """
         return self.process_approval(
-            case_id=int(case_id) if isinstance(case_id, str) else case_id,
+            case_id=case_id,
             action_type="reject",
             operator_id=approver_id,
             operator_name=None,
@@ -98,7 +120,7 @@ class ApprovalService:
         operator_name: Optional[str] = None,
         comment: Optional[str] = None,
     ) -> dict:
-        """Process approval callback.
+        """Process approval callback with async action dispatch.
 
         Args:
             case_id: Decision case ID
@@ -123,7 +145,7 @@ class ApprovalService:
 
         if not case:
             logger.error(f"Decision case {case_id} not found")
-            raise ValueError(f"决策案例 {case_id} 不存在")
+            raise ValueError(f"Decision case {case_id} not found")
 
         # Validate case status (must be 'recommended' for approval)
         if case.status != "recommended":
@@ -131,7 +153,7 @@ class ApprovalService:
                 f"Case {case_id} status '{case.status}' not allowed for approval"
             )
             raise ValueError(
-                f"案例状态 '{case.status}' 不允许审批操作，必须为 'recommended' 状态"
+                f"Case status '{case.status}' cannot be approved, must be 'recommended'"
             )
 
         previous_status = case.status
@@ -139,9 +161,10 @@ class ApprovalService:
         try:
             # Update case status based on action
             if action_type == "approve":
+                # Step 1: Transition to approved
                 new_status = "approved"
                 case.status = new_status
-                case.updated_at = datetime.utcnow()
+                case.updated_at = utcnow()
                 self.db.flush()
 
                 # Create approval log
@@ -163,27 +186,35 @@ class ApprovalService:
                 )
 
                 if recommendation and recommendation.suggested_actions:
-                    # Execute mock actions for approved case
-                    self._execute_actions(
+                    # Step 2: Create action execution records in action_pending state
+                    action_executions = self._create_action_executions(
                         case_id=case_id,
                         recommendation_id=recommendation.id,
                         suggested_actions=recommendation.suggested_actions,
                     )
 
-                    # Update case status to executed
-                    case.status = "executed"
-                    case.updated_at = datetime.utcnow()
-                    self.db.flush()
+                    # Step 3: Dispatch async execution via Celery
+                    self._dispatch_async_executions(action_executions)
 
+                    # Step 4: Transition to action_pending (waiting for async execution)
+                    case.status = "action_pending"
+                    case.updated_at = utcnow()
+                    self.db.flush()
+                    new_status = "action_pending"
+                else:
+                    # No actions needed - directly mark as executed
+                    case.status = "executed"
+                    case.updated_at = utcnow()
+                    self.db.flush()
                     new_status = "executed"
 
             elif action_type == "reject":
                 new_status = "rejected"
                 case.status = new_status
-                case.updated_at = datetime.utcnow()
+                case.updated_at = utcnow()
                 self.db.flush()
 
-                # Create approval log
+                # Create approval log (no action execution for reject)
                 self._create_approval_log(
                     case_id=case_id,
                     operator_id=operator_id,
@@ -196,7 +227,7 @@ class ApprovalService:
 
             else:
                 logger.error(f"Invalid action type: {action_type}")
-                raise ValueError(f"无效的审批动作类型: {action_type}")
+                raise ValueError(f"Invalid action type: {action_type}")
 
             self.db.commit()
 
@@ -207,7 +238,7 @@ class ApprovalService:
 
             return {
                 "status": "success",
-                "message": "审批处理成功",
+                "message": "Approval processed successfully",
                 "case_id": case_id,
                 "new_status": new_status,
             }
@@ -216,7 +247,7 @@ class ApprovalService:
             self.db.rollback()
             logger.error(f"Concurrent approval conflict for case {case_id}: {e}")
             raise IntegrityError(
-                f"案例 {case_id} 发生并发审批冲突，状态已被其他操作更新",
+                f"Concurrent approval conflict for case {case_id}",
                 params=e.params,
                 orig=e.orig,
             )
@@ -253,7 +284,7 @@ class ApprovalService:
             comment=comment,
             previous_status=previous_status,
             new_status=new_status,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         self.db.add(log)
         self.db.flush()
@@ -265,128 +296,168 @@ class ApprovalService:
 
         return log
 
-    def _execute_actions(
+    def _create_action_executions(
         self,
         case_id: int,
         recommendation_id: int,
         suggested_actions: list[dict],
-    ) -> None:
-        """Execute mock actions for approved case.
+    ) -> list[ActionExecution]:
+        """Create action execution records in action_pending state.
 
-        Handles various action formats and ensures graceful failure for unknown types.
-        Ensures idempotency by checking for existing executions.
+        Creates records with idempotency keys for async execution.
 
         Args:
             case_id: Decision case ID
             recommendation_id: Recommendation ID
             suggested_actions: List of suggested actions
+
+        Returns:
+            List of created ActionExecution records
         """
-        from sqlalchemy.exc import IntegrityError
+        executions = []
 
         for action in suggested_actions:
-            # Handle both "type" and "action_type" fields for compatibility
             action_type = action.get("type") or action.get("action_type")
             action_params = action.get("params", {})
 
             if not action_type:
                 logger.error(f"Action missing type field: {action}")
-                try:
-                    self.action_repo.create(
-                        case_id=case_id,
-                        recommendation_id=recommendation_id,
-                        action_type="unknown",
-                        action_params=action,
-                        execution_status="failed",
-                        execution_result="动作缺少类型字段",
-                        duration_ms=0,
-                    )
-                    self.db.commit()
-                except IntegrityError:
-                    self.db.rollback()
-                    logger.error(f"Database constraint violation for unknown action type")
-                continue
-
-            # Handle "no_action" type - do nothing
-            if action_type == "no_action":
-                logger.info(f"No action needed for case {case_id}")
-                try:
-                    self.action_repo.create(
-                        case_id=case_id,
-                        recommendation_id=recommendation_id,
-                        action_type="调整人群",  # Use a valid action type
-                        action_params={"no_action": True},
-                        execution_status="success",
-                        execution_result="无需执行动作",
-                        duration_ms=0,
-                    )
-                    self.db.commit()
-                except IntegrityError:
-                    self.db.rollback()
-                    logger.error(f"Database constraint violation for no_action")
+                # Create failed execution for missing type
+                execution = self.action_repo.create(
+                    case_id=case_id,
+                    recommendation_id=recommendation_id,
+                    action_type="unknown",
+                    action_params=action,
+                    execution_status="action_failed",
+                    execution_result="Action missing type field",
+                    duration_ms=0,
+                )
+                executions.append(execution)
                 continue
 
             # Check for existing execution (idempotency)
-            existing = self.action_repo.find_by_case_and_type(case_id, action_type)
+            idempotency_key = ActionExecution.generate_idempotency_key(
+                case_id, recommendation_id, action_type
+            )
+            existing = self.action_repo.find_by_idempotency_key(idempotency_key)
             if existing:
                 logger.info(
-                    f"Action {action_type} already executed for case {case_id}, "
-                    f"status: {existing.execution_status}. Skipping duplicate execution."
+                    f"Action {action_type} already exists for case {case_id}, "
+                    f"status: {existing.execution_status}. Skipping duplicate."
                 )
                 continue
 
-            try:
-                result = self.mock_action_service.execute_action(
-                    case_id=case_id,
-                    recommendation_id=recommendation_id,
-                    action_type=action_type,
-                    action_params=action_params,
+            # Create execution record in action_pending state
+            execution = self.action_repo.create(
+                case_id=case_id,
+                recommendation_id=recommendation_id,
+                action_type=action_type,
+                action_params=action_params,
+                execution_status="action_pending",
+                idempotency_key=idempotency_key,
+            )
+            executions.append(execution)
+
+            logger.info(
+                f"Action execution created: {action_type} for case {case_id}, "
+                f"idempotency_key: {idempotency_key}"
+            )
+
+        self.db.commit()
+        return executions
+
+    def _dispatch_async_executions(self, executions: list[ActionExecution]) -> None:
+        """Dispatch action executions via Celery.
+
+        Args:
+            executions: List of ActionExecution records to dispatch
+        """
+        try:
+            from app.tasks.action_executor import execute_action_task
+
+            for execution in executions:
+                # Skip failed executions (e.g., missing type)
+                if execution.execution_status == "action_failed":
+                    continue
+
+                execute_action_task.delay(
+                    execution_id=execution.id,
+                    case_id=execution.case_id,
+                    recommendation_id=execution.recommendation_id,
+                    action_type=execution.action_type,
+                    action_params=execution.action_params or {},
+                    idempotency_key=execution.idempotency_key,
                 )
 
                 logger.info(
-                    f"Mock action executed: {action_type} for case {case_id}, "
-                    f"result: {result['status']}"
+                    f"Async execution dispatched: execution_id={execution.id}, "
+                    f"action_type={execution.action_type}"
                 )
 
-            except ValueError as e:
-                # Unknown action type - record as failed
-                logger.error(
-                    f"Unknown action type: {action_type} for case {case_id}, error: {e}"
-                )
-                try:
-                    # Use a valid action type for database constraint
-                    self.action_repo.create(
-                        case_id=case_id,
-                        recommendation_id=recommendation_id,
-                        action_type="调整人群",  # Placeholder type
-                        action_params={"original_type": action_type},
-                        execution_status="failed",
-                        execution_result=f"未知动作类型: {action_type}",
-                        duration_ms=0,
+        except Exception as e:
+            logger.error(f"Failed to dispatch async executions: {e}")
+            # Update execution status to failed
+            for execution in executions:
+                if execution.execution_status != "action_failed":
+                    self.action_repo.update_status(
+                        execution_id=execution.id,
+                        execution_status="action_failed",
+                        execution_result=f"Failed to dispatch: {str(e)}",
                     )
-                    self.db.commit()
-                except IntegrityError:
-                    self.db.rollback()
-                    logger.error(f"Database constraint violation when recording failed action")
-            except Exception as e:
-                logger.error(
-                    f"Mock action execution failed: {action_type} for case {case_id}, "
-                    f"error: {e}"
-                )
-                # Record failed execution
-                try:
-                    self.action_repo.create(
-                        case_id=case_id,
-                        recommendation_id=recommendation_id,
-                        action_type="调整人群",  # Placeholder type
-                        action_params={"original_type": action_type},
-                        execution_status="failed",
-                        execution_result=f"执行失败: {str(e)}",
-                        duration_ms=0,
-                    )
-                    self.db.commit()
-                except IntegrityError:
-                    self.db.rollback()
-                    logger.error(f"Database constraint violation when recording failed action")
+            self.db.commit()
+
+    def retry_action(self, execution_id: int) -> dict:
+        """Retry a failed action execution.
+
+        Args:
+            execution_id: Action execution ID
+
+        Returns:
+            Retry result
+        """
+        execution = self.action_repo.find_by_id(execution_id)
+        if not execution:
+            raise ValueError(f"Execution record {execution_id} not found")
+
+        if not execution.is_retryable:
+            return {
+                "status": "failed",
+                "message": f"Max retries exceeded: {execution.retry_count}/{execution.max_retries}",
+                "execution_id": execution_id,
+            }
+
+        # Increment retry count
+        execution = self.action_repo.increment_retry(execution_id)
+        self.db.commit()
+
+        # Dispatch retry execution
+        try:
+            from app.tasks.action_executor import execute_action_task
+
+            execute_action_task.delay(
+                execution_id=execution.id,
+                case_id=execution.case_id,
+                recommendation_id=execution.recommendation_id,
+                action_type=execution.action_type,
+                action_params=execution.action_params or {},
+                idempotency_key=execution.idempotency_key,
+            )
+
+            logger.info(f"Action retry dispatched: execution_id={execution_id}")
+
+            return {
+                "status": "success",
+                "message": f"Retry dispatched, attempt {execution.retry_count}",
+                "execution_id": execution_id,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to dispatch retry: {e}")
+            return {
+                "status": "failed",
+                "message": str(e),
+                "execution_id": execution_id,
+            }
 
     def get_approval_history(self, case_id: int) -> list[ApprovalLog]:
         """Get approval history for a case.
@@ -403,3 +474,15 @@ class ApprovalService:
             .order_by(ApprovalLog.created_at)
             .all()
         )
+
+    def is_valid_transition(self, from_state: str, to_state: str) -> bool:
+        """Check if state transition is valid.
+
+        Args:
+            from_state: Current state
+            to_state: Target state
+
+        Returns:
+            True if transition is valid
+        """
+        return to_state in self.VALID_TRANSITIONS.get(from_state, [])

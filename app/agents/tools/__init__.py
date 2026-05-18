@@ -13,6 +13,8 @@ from app.agents.tools.merchant_metrics_tool import get_merchant_metrics
 from app.agents.tools.coupon_conversion_tool import get_coupon_conversion
 from app.agents.tools.user_metrics_tool import get_user_metrics
 from app.agents.tools.recent_receipts_tool import get_recent_receipts
+from app.agents.tools.prediction_summary_tool import get_prediction_summary
+from app.agents.tools.campaign_simulation_tool import simulate_campaign_effect
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,31 @@ AVAILABLE_TOOLS = {
             "limit": "Maximum receipts to return (default: 20)",
         },
     },
+    # M4 High Standard: New tools for enhanced analysis
+    "get_prediction_summary": {
+        "function": get_prediction_summary,
+        "description": "Get ML prediction summary including redeem probability, "
+                       "confidence interval, and signal classification. "
+                       "Provides structured evidence for Agent decisions.",
+        "parameters": {
+            "merchant_id": "Merchant ID to query (optional)",
+            "user_id": "User ID to query (optional)",
+            "coupon_id": "Coupon ID to query (optional)",
+        },
+    },
+    "simulate_campaign_effect": {
+        "function": simulate_campaign_effect,
+        "description": "Simulate campaign adjustment effects including expected "
+                       "redeem rate change, volume impact, and risk assessment. "
+                       "Supports discount changes, targeting, distribution adjustments.",
+        "parameters": {
+            "merchant_id": "Merchant ID to simulate (required)",
+            "adjustment_type": "Type of adjustment: change_discount, adjust_target_users, "
+                              "pause_distribution, increase_distribution, "
+                              "reduce_discount_depth, send_reminder",
+            "adjustment_params": "Adjustment parameters as JSON object (optional)",
+        },
+    },
 }
 
 
@@ -89,6 +116,8 @@ __all__ = [
     "get_coupon_conversion",
     "get_user_metrics",
     "get_recent_receipts",
+    "get_prediction_summary",
+    "simulate_campaign_effect",
     "execute_tool",
     "AVAILABLE_TOOLS",
 ]

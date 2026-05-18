@@ -2,6 +2,8 @@
 
 Task: T092
 Phase: 4 - US1 Approval Callback Flow
+
+Updated for M5: Added idempotency key and retry support.
 """
 
 from datetime import datetime
@@ -30,6 +32,9 @@ class ActionExecutionRepository:
         execution_status: str = "pending",
         execution_result: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        idempotency_key: Optional[str] = None,
+        retry_count: int = 0,
+        max_retries: int = 3,
     ) -> ActionExecution:
         """Create a new action execution record.
 
@@ -38,13 +43,22 @@ class ActionExecutionRepository:
             recommendation_id: Recommendation ID
             action_type: Action type (暂停活动, 调整折扣, 发送优惠券, 调整人群)
             action_params: Action parameters (JSON)
-            execution_status: Execution status (pending, success, failed, timeout)
+            execution_status: Execution status (pending, action_pending, action_running, executed, action_failed, timeout)
             execution_result: Execution result description
             duration_ms: Execution duration in milliseconds
+            idempotency_key: Unique key for idempotency
+            retry_count: Current retry count
+            max_retries: Maximum retries allowed
 
         Returns:
             Created ActionExecution record
         """
+        # Generate idempotency key if not provided
+        if not idempotency_key:
+            idempotency_key = ActionExecution.generate_idempotency_key(
+                case_id, recommendation_id, action_type
+            )
+
         execution = ActionExecution(
             case_id=case_id,
             recommendation_id=recommendation_id,
@@ -53,11 +67,30 @@ class ActionExecutionRepository:
             execution_status=execution_status,
             execution_result=execution_result,
             duration_ms=duration_ms,
-            executed_at=datetime.utcnow() if execution_status != "pending" else None,
+            idempotency_key=idempotency_key,
+            retry_count=retry_count,
+            max_retries=max_retries,
+            executed_at=datetime.utcnow() if execution_status in ["executed", "action_failed", "timeout"] else None,
+            created_at=datetime.utcnow(),
         )
         self.db.add(execution)
         self.db.flush()
         return execution
+
+    def find_by_id(self, execution_id: int) -> Optional[ActionExecution]:
+        """Find action execution by ID.
+
+        Args:
+            execution_id: Action execution ID
+
+        Returns:
+            ActionExecution record or None
+        """
+        return (
+            self.db.query(ActionExecution)
+            .filter(ActionExecution.id == execution_id)
+            .first()
+        )
 
     def find_by_case_id(self, case_id: int) -> list[ActionExecution]:
         """Find all action executions for a case.
@@ -71,7 +104,7 @@ class ActionExecutionRepository:
         return (
             self.db.query(ActionExecution)
             .filter(ActionExecution.case_id == case_id)
-            .order_by(ActionExecution.executed_at)
+            .order_by(ActionExecution.created_at)
             .all()
         )
 
@@ -96,6 +129,52 @@ class ActionExecutionRepository:
             .first()
         )
 
+    def find_by_idempotency_key(
+        self, idempotency_key: str
+    ) -> Optional[ActionExecution]:
+        """Find action execution by idempotency key.
+
+        Args:
+            idempotency_key: Unique idempotency key
+
+        Returns:
+            ActionExecution record or None
+        """
+        return (
+            self.db.query(ActionExecution)
+            .filter(ActionExecution.idempotency_key == idempotency_key)
+            .first()
+        )
+
+    def find_pending_executions(self) -> list[ActionExecution]:
+        """Find all executions in action_pending status.
+
+        Returns:
+            List of ActionExecution records pending execution
+        """
+        return (
+            self.db.query(ActionExecution)
+            .filter(ActionExecution.execution_status == "action_pending")
+            .order_by(ActionExecution.created_at)
+            .all()
+        )
+
+    def find_retryable_executions(self) -> list[ActionExecution]:
+        """Find all failed executions that can be retried.
+
+        Returns:
+            List of ActionExecution records that can be retried
+        """
+        return (
+            self.db.query(ActionExecution)
+            .filter(
+                ActionExecution.execution_status.in_(["action_failed", "timeout"]),
+                ActionExecution.retry_count < ActionExecution.max_retries,
+            )
+            .order_by(ActionExecution.created_at)
+            .all()
+        )
+
     def update_status(
         self,
         execution_id: int,
@@ -114,16 +193,28 @@ class ActionExecutionRepository:
         Returns:
             Updated ActionExecution record
         """
-        execution = (
-            self.db.query(ActionExecution)
-            .filter(ActionExecution.id == execution_id)
-            .first()
-        )
+        execution = self.find_by_id(execution_id)
         if execution:
             execution.execution_status = execution_status
             execution.execution_result = execution_result
             execution.duration_ms = duration_ms
-            if execution_status != "pending":
+            execution.updated_at = datetime.utcnow()
+            if execution_status in ["executed", "action_failed", "timeout"]:
                 execution.executed_at = datetime.utcnow()
+            self.db.flush()
+        return execution
+
+    def increment_retry(self, execution_id: int) -> ActionExecution:
+        """Increment retry count and reset status to action_pending.
+
+        Args:
+            execution_id: Action execution ID
+
+        Returns:
+            Updated ActionExecution record
+        """
+        execution = self.find_by_id(execution_id)
+        if execution:
+            execution.increment_retry()
             self.db.flush()
         return execution

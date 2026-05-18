@@ -53,7 +53,8 @@ class TimeSafeFeatureCalculator:
         # Get all receipts in date range
         receipts_query = text("""
             SELECT
-                user_id || '_' || merchant_id || '_' || coupon_id || '_' || to_char(date_received, 'YYYYMMDD') as receipt_id,
+                id as receipt_db_id,
+                user_id || '_' || merchant_id || '_' || coupon_id || '_' || to_char(date_received, 'YYYYMMDD') || '_' || id as receipt_id,
                 user_id,
                 merchant_id,
                 coupon_id,

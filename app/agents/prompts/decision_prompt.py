@@ -41,8 +41,8 @@ def build_decision_prompt(case: DecisionCase, tool_results: Dict[str, Any]) -> s
 ## 决策要求
 请基于以上数据和证据，生成决策建议。要求：
 
-1. **证据完整性**: 至少提供3条独立证据来支持你的结论，每条证据包含：
-   - 类型（如"指标异常"、"发券规模"、"折扣分析"等）
+1. **证据完整性**: 至少提供4条独立证据来支持你的结论，每条证据包含：
+   - 类型（如"指标异常"、"发券规模"、"折扣分析"、"ML预测"等）
    - 详细描述（具体数值和变化幅度）
    - 严重级别（高/中/低）
 
@@ -64,6 +64,12 @@ def build_decision_prompt(case: DecisionCase, tool_results: Dict[str, Any]) -> s
 4. **置信度评分**: 给出0-1的置信度评分（基于证据充分性）
 
 5. **审批需求**: 高风险动作（如暂停活动、大幅调整折扣）需要人工审批
+
+6. **ML模型信号**（新增）: 基于预测工具结果，提供模型信号分析
+
+7. **业务风险评估**（新增）: 评估业务影响级别和潜在损失
+
+8. **分析局限性**（新增）: 列出本次分析的数据限制或不确定性
 
 ## 输出格式
 请以JSON格式输出，严格按照以下Schema：
@@ -88,15 +94,33 @@ def build_decision_prompt(case: DecisionCase, tool_results: Dict[str, Any]) -> s
   ],
   "risk_alerts": "风险提示文本",
   "confidence_score": 0.85,
-  "requires_approval": true
+  "requires_approval": true,
+  "model_signal": {
+    "prediction_score": 0.72,
+    "signal_type": "redeem_probability",
+    "confidence_interval": [0.65, 0.79]
+  },
+  "business_risk": {
+    "risk_level": "medium",
+    "potential_revenue_impact": "-5% to -10%",
+    "affected_users": 1500,
+    "mitigation_available": true
+  },
+  "limitations": [
+    "历史数据仅30天",
+    "无法获取实时数据"
+  ]
 }
 ```
 """ + f"""
 
 注意：
-- evidence_list数组至少包含3个元素
+- evidence_list数组至少包含4个元素（M4高标准）
 - confidence_score为0-1的浮点数
 - requires_approval为布尔值（高风险动作必须为true）
+- model_signal包含ML预测信号（如有预测工具结果）
+- business_risk包含业务风险评估
+- limitations列出分析局限性
 - 所有字符串内容必须使用中文
 
 请开始分析并输出JSON格式的决策建议。
