@@ -13,3 +13,19 @@ celerybeat-schedule
 *.egg-info/
 dist/
 build/
+
+# Virtual environment
+venv/
+.venv/
+
+# Test coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Claude Code configuration (user-specific)
+.claude/
+
+# ML model artifacts (optional - uncomment if not tracking models)
+# app/ml/artifacts/*.joblib
+# *.joblib

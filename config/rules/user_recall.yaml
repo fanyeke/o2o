@@ -1,0 +1,29 @@
+# Rule: User Recall
+#
+# Triggers when a user has been inactive but has high historical redemption
+# Used to identify users worth re-engaging with targeted coupons
+
+id: user_recall
+name: User Recall
+description: 检测长时间未领券但历史核销率高的用户，适合进行召回营销
+entity_type: user
+
+# All conditions must be satisfied (AND logic)
+conditions:
+  # User has been inactive for more than 30 days
+  # (Note: This field is calculated as days_since_last_receipt)
+  - field: days_since_last_receipt
+    operator: gt
+    value: 30
+
+  # User has high historical redemption rate (>= 50%)
+  - field: redeemed_rate_30d
+    operator: gte
+    value: 0.5
+
+severity: medium
+
+# Example entities that would trigger this rule:
+# - User who last received coupon 45 days ago and has 60% redemption rate
+# - User who last received coupon 60 days ago and has 70% redemption rate
+# - User who last received coupon 35 days ago and has 55% redemption rate

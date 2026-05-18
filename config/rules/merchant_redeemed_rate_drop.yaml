@@ -1,0 +1,29 @@
+# Rule: Merchant Redeemed Rate Drop
+#
+# Triggers when a merchant's redemption rate drops significantly compared to baseline
+# Used to detect declining merchant activity health
+
+id: merchant_redeemed_rate_drop
+name: Merchant Redeemed Rate Drop
+description: 检测商户核销率显著下降，7日核销率相比30日基线下降超过20%，且发券量达到一定规模
+entity_type: merchant
+
+# All conditions must be satisfied (AND logic)
+conditions:
+  # Redemption rate dropped by more than 20% compared to 30-day baseline
+  - field: redeemed_rate_change
+    operator: lt
+    value: -0.2
+
+  # Must have sufficient activity volume (at least 200 receipts in 7 days)
+  # to avoid false positives from small sample sizes
+  - field: total_receipts_7d
+    operator: gt
+    value: 200
+
+severity: high
+
+# Example entities that would trigger this rule:
+# - Merchant with redeemed_rate_7d = 0.15, redeemed_rate_30d = 0.25 (40% drop)
+# - Merchant with redeemed_rate_7d = 0.30, redeemed_rate_30d = 0.40 (25% drop)
+# - Merchant with redeemed_rate_change = -0.3 (30% drop) and total_receipts_7d = 500

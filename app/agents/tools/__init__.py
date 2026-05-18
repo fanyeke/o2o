@@ -1,0 +1,71 @@
+"""Agent tools package.
+
+This package contains data query tools used by the Agent system
+to gather evidence for decision-making. Each tool returns JSON-serializable
+output suitable for LLM Tool Calling.
+"""
+
+import logging
+from typing import Any
+from sqlalchemy.orm import Session
+
+from app.agents.tools.merchant_metrics_tool import get_merchant_metrics
+from app.agents.tools.coupon_conversion_tool import get_coupon_conversion
+
+logger = logging.getLogger(__name__)
+
+
+# Tool registry for Agent orchestration
+AVAILABLE_TOOLS = {
+    "get_merchant_metrics": {
+        "function": get_merchant_metrics,
+        "description": "Get merchant metrics including redeem rates, receipt counts, "
+                       "discount depth, and activity health score. Returns structured "
+                       "evidence items.",
+        "parameters": {
+            "merchant_id": "Merchant ID to query (required)",
+        },
+    },
+    "get_coupon_conversion": {
+        "function": get_coupon_conversion,
+        "description": "Get coupon conversion metrics for a merchant or specific coupon, "
+                       "including conversion rates, timing analysis, and discount strategy.",
+        "parameters": {
+            "coupon_id": "Coupon ID to query (optional)",
+            "merchant_id": "Merchant ID to query all coupons (optional)",
+        },
+    },
+}
+
+
+def execute_tool(db: Session, tool_name: str, **kwargs) -> Any:
+    """Execute a named tool with given parameters.
+
+    Args:
+        db: Database session
+        tool_name: Name of the tool to execute
+        **kwargs: Tool parameters
+
+    Returns:
+        Tool execution result
+
+    Raises:
+        ValueError: If tool name is invalid
+    """
+    if tool_name not in AVAILABLE_TOOLS:
+        raise ValueError(f"Unknown tool: {tool_name}")
+
+    tool = AVAILABLE_TOOLS[tool_name]
+    function = tool["function"]
+
+    logger.info(f"Executing tool '{tool_name}' with params: {kwargs}")
+
+    return function(db, **kwargs)
+
+
+__all__ = [
+    "get_merchant_metrics",
+    "get_coupon_conversion",
+    "execute_tool",
+    "AVAILABLE_TOOLS",
+]

@@ -10,6 +10,7 @@ engine = create_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
+    pool_recycle=3600,  # Recycle connections after 1 hour
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

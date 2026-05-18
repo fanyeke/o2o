@@ -10,6 +10,9 @@ celery_app = Celery(
     include=[
         "app.tasks.import_dataset",
         "app.tasks.refresh_features",
+        "app.tasks.clean_data",
+        "app.tasks.agent_decision",
+        "app.tasks.rule_scan",
     ],
 )
 
@@ -26,6 +29,11 @@ celery_app.conf.update(
     beat_schedule={
         "refresh-features-daily": {
             "task": "app.tasks.refresh_features.refresh_all_features",
+            "schedule": 86400.0,
+            "options": {"queue": "default"},
+        },
+        "rule-scan-daily": {
+            "task": "app.tasks.rule_scan.rule_scan_task",
             "schedule": 86400.0,
             "options": {"queue": "default"},
         },

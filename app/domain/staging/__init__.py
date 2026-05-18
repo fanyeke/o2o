@@ -1,0 +1,2 @@
+from app.domain.staging.coupon_receipt_event import CouponReceiptEvent
+from app.domain.staging.consumption_event import ConsumptionEvent
