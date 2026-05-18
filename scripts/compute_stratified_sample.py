@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compute sample time-safe features - simplified version."""
+"""Stratified sample feature computation for train/val/test."""
 
 import sys
 from pathlib import Path
@@ -14,42 +14,38 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def compute_sample_features(start_date: date, end_date: date):
-    """Compute features with stratified sampling across train/val/test periods."""
+def compute_stratified_sample():
+    """Compute 20K stratified sample: 12K train + 4K val + 4K test."""
     db = next(get_db())
 
-    logger.info(f"Computing stratified sample: {start_date} to {end_date}")
+    logger.info("Computing stratified sample: 12K train + 4K val + 4K test")
 
-    db.execute(text("DELETE FROM feature.receipt_training_features"))
+    # Clear table
+    db.execute(text("TRUNCATE TABLE feature.receipt_training_features"))
     db.commit()
 
-    # Stratified sampling: train (Jan-Apr), val (May), test (Jun)
+    # Stratified INSERT with UNION ALL
     sql = text("""
-        WITH train_samples AS (
-            SELECT user_id, merchant_id, coupon_id, date_received, date_redeemed, is_redeemed, distance, id
-            FROM staging.coupon_receipt_event
+        WITH train_ids AS (
+            SELECT id FROM staging.coupon_receipt_event
             WHERE date_received BETWEEN '2016-01-01' AND '2016-04-30'
-            ORDER BY RANDOM()
-            LIMIT 12000
+            ORDER BY RANDOM() LIMIT 12000
         ),
-        val_samples AS (
-            SELECT user_id, merchant_id, coupon_id, date_received, date_redeemed, is_redeemed, distance, id
-            FROM staging.coupon_receipt_event
+        val_ids AS (
+            SELECT id FROM staging.coupon_receipt_event
             WHERE date_received BETWEEN '2016-05-01' AND '2016-05-31'
-            ORDER BY RANDOM()
-            LIMIT 4000
+            ORDER BY RANDOM() LIMIT 4000
         ),
-        test_samples AS (
-            SELECT user_id, merchant_id, coupon_id, date_received, date_redeemed, is_redeemed, distance, id
-            FROM staging.coupon_receipt_event
+        test_ids AS (
+            SELECT id FROM staging.coupon_receipt_event
             WHERE date_received BETWEEN '2016-06-01' AND '2016-06-30'
-            ORDER BY RANDOM()
-            LIMIT 4000
+            ORDER BY RANDOM() LIMIT 4000
+        ),
+        all_ids AS (
+            SELECT id FROM train_ids UNION ALL SELECT id FROM val_ids UNION ALL SELECT id FROM test_ids
         ),
         targets AS (
-            SELECT * FROM train_samples
-            UNION ALL SELECT * FROM val_samples
-            UNION ALL SELECT * FROM test_samples
+            SELECT t.* FROM staging.coupon_receipt_event t JOIN all_ids a ON t.id = a.id
         )
         INSERT INTO feature.receipt_training_features (
             receipt_id, user_id, merchant_id, coupon_id, as_of_date,
@@ -64,11 +60,9 @@ def compute_sample_features(start_date: date, end_date: date):
             t.user_id||'_'||t.merchant_id||'_'||t.coupon_id||'_'||to_char(t.date_received,'YYYYMMDD')||'_'||t.id,
             t.user_id, t.merchant_id, t.coupon_id, t.date_received,
             u.cnt, u.red_cnt, u.red_rate, u.avg_dist,
-            m.cnt7, m.red7, m.rate7,
-            m.cnt30, m.red30, m.rate30, m.avg_depth,
+            m.cnt7, m.red7, m.rate7, m.cnt30, m.red30, m.rate30, m.avg_depth,
             c.cnt, c.red_cnt, c.red_rate, c.avg_days,
-            'unknown', 0.0, 0.0, 0.0,
-            COALESCE(t.distance::integer, 0),
+            'unknown', 0.0, 0.0, 0.0, COALESCE(t.distance::integer, 0),
             EXTRACT(DOW FROM t.date_received)::integer,
             EXTRACT(MONTH FROM t.date_received)::integer,
             EXTRACT(DAY FROM t.date_received)::integer,
@@ -93,18 +87,29 @@ def compute_sample_features(start_date: date, end_date: date):
                  FROM staging.coupon_receipt_event WHERE coupon_id=t.coupon_id AND date_received<t.date_received) c
     """)
 
-    result = db.execute(sql, {"s": start_date, "e": end_date})
+    result = db.execute(sql)
     rows = result.rowcount
     db.commit()
 
-    logger.info(f"✓ Inserted {rows} rows")
+    # Verify distribution
+    stats = db.execute(text("""
+        SELECT
+            CASE WHEN as_of_date < '2016-05-01' THEN 'train'
+                 WHEN as_of_date < '2016-06-01' THEN 'val'
+                 ELSE 'test' END as period,
+            COUNT(*) as count
+        FROM feature.receipt_training_features
+        GROUP BY period
+        ORDER BY period
+    """)).fetchall()
 
-    count = db.execute(text("SELECT COUNT(*) FROM feature.receipt_training_features")).first()[0]
-    logger.info(f"Total: {count} rows")
+    logger.info(f"✓ Inserted {rows} rows")
+    for period, count in stats:
+        logger.info(f"  {period}: {count} rows")
 
     db.close()
     return rows
 
 if __name__ == "__main__":
-    compute_sample_features(date(2016,6,1), date(2016,6,7))
-    print("✓ Done")
+    compute_stratified_sample()
+    print("✓ Stratified sample computation complete")

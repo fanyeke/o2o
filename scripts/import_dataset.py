@@ -4,6 +4,11 @@
 import argparse
 import pandas as pd
 from sqlalchemy import text
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from app.core.database import engine, SessionLocal
 from app.domain.raw.offline_train import OfflineTrain
 from app.domain.raw.offline_test import OfflineTest

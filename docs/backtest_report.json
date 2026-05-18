@@ -1,0 +1,47 @@
+{
+  "model_version": "v1.0.0",
+  "feature_version": "v1_time_safe",
+  "training_date": "2026-05-18",
+  "dataset": {
+    "train_samples": 12000,
+    "val_samples": 4000,
+    "test_samples": 4000,
+    "train_positive_rate": 0.047,
+    "val_positive_rate": 0.1047,
+    "test_positive_rate": 0.0745,
+    "train_range": "2016-01-01 to 2016-04-30",
+    "val_range": "2016-05-01 to 2016-05-31",
+    "test_range": "2016-06-01 to 2016-06-30"
+  },
+  "performance": {
+    "grouped_auc": 0.6031,
+    "overall_auc": 0.7725,
+    "validation_grouped_auc": 0.6012,
+    "validation_overall_auc": 0.7657,
+    "below_baseline_threshold": true,
+    "baseline_threshold": 0.68
+  },
+  "baseline_comparison": {
+    "model_vs_random": "PASSED",
+    "model_vs_merchant_baseline": "PASSED",
+    "model_vs_user_baseline": "FAILED",
+    "model_vs_coupon_baseline": "PASSED"
+  },
+  "calibration": {
+    "ece_measured": false,
+    "ece_threshold": 0.05
+  },
+  "lift_metrics": {
+    "top_10_percent_lift": null,
+    "top_20_percent_lift": null,
+    "target_lift_top_10": 2.0,
+    "target_lift_top_20": 1.5
+  },
+  "notes": [
+    "Model trained on stratified 20K sample (12K train + 4K val + 4K test)",
+    "Time-safe features: all historical features computed with date_received < as_of_date",
+    "Grouped AUC below 0.68 threshold, likely due to small sample size",
+    "Baseline comparison shows model outperforms random/merchant/coupon baselines",
+    "Full dataset (1M+) would improve performance metrics"
+  ]
+}

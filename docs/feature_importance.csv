@@ -1,0 +1,11 @@
+feature,importance
+user_redeemed_rate_30d_before,42
+user_receipts_30d_before,66
+user_avg_distance_before,29
+merchant_redeemed_rate_7d_before,128
+merchant_redeemed_rate_30d_before,184
+merchant_avg_discount_depth_before,0
+coupon_redeemed_rate_before,147
+coupon_avg_redeem_days_before,124
+discount_value,0
+discount_type_encoded,0
