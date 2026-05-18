@@ -138,7 +138,10 @@ def test_agent_tools_registry():
 
 def test_agent_prompt_formatting():
     """Verify Agent prompt formatting doesn't crash with tool outputs."""
-    from app.agents.prompts.decision_prompt import _format_tool_results
+    # Import at module level to check structure exists
+    import sys
+    sys.path.insert(0, '/home/zzz/project/o2o')
+    from app.agents.prompts import decision_prompt
 
     # Mock tool output matching actual structure
     mock_tool_results = {
@@ -174,10 +177,13 @@ def test_agent_prompt_formatting():
         }
     }
 
-    # Should not raise KeyError
-    formatted = _format_tool_results(mock_tool_results, "merchant", "test_merchant")
+    # Test _format_tool_results function directly (it's a module-level function)
+    formatted = decision_prompt._format_tool_results(mock_tool_results)
+
+    # Should not raise KeyError or any exception
     assert formatted is not None
     assert len(formatted) > 0
+    assert "商户指标" in formatted or "优惠券转化数据" in formatted
 
 
 def test_fastapi_app_startup():
