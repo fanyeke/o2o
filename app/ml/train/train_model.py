@@ -242,14 +242,18 @@ class CouponRedemptionPredictor:
             'feature_names': self.feature_names,
             'best_iteration': self.best_iteration,
             'model_params': self.model_params,
-            'train_date_range': {
-                'start': str(self.time_split.train_start),
-                'end': str(self.time_split.train_end)
+            'metadata': {
+                'model_version': 'v1.0.0',
+                'feature_version': 'v1_time_safe',
+                'train_date_range': {
+                    'start': str(self.time_split.train_start),
+                    'end': str(self.time_split.train_end)
+                }
             }
         }
 
         if include_metrics and test_metrics:
-            save_dict['test_metrics'] = test_metrics
+            save_dict['metadata']['metrics'] = test_metrics
 
         joblib.dump(save_dict, model_path)
         print(f"\nModel saved to: {model_path}")
