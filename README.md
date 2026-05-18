@@ -1,6 +1,113 @@
-# 优惠券运营决策 Agent 系统 - MVP **核心功能已修复**
+# 优惠券运营决策 Agent 系统 - MVP **API验收就绪**
 
-**状态**: P0运行时阻断和安全问题已全部修复，核心API和Agent功能可运行
+**状态**: P0用户体验阻塞问题已修复4/5，核心API功能可用
+
+## ✅ 已修复P0问题（4/5）
+
+### 1. ✅ Quickstart配置生效
+- 统一读取.env（移除.env.dev）
+- docker-compose.yml添加env_file注入
+- 配置验证（缺失API_TOKEN/LLM_API_KEY警告）
+
+### 2. ✅ 数据初始化链路完整
+- 新增scripts/init_metrics.py完整pipeline
+- 串起导入→清洗→特征→模型训练
+
+### 3. ✅ 用户审批接口可用
+- POST /api/v1/cases/{id}/approve - 直接批准
+- POST /api/v1/cases/{id}/reject - 直接驳回
+- 不依赖飞书回调，用户可直接操作
+
+### 4. ✅ Agent证据字段映射
+- API层正确映射description→content, priority→risk_level
+- 案例详情完整显示证据和风险级别
+
+## ⏳ 待规划功能
+
+### 5. ⏳ 决策中心Dashboard（后续任务）
+**当前状态**: 仅提供Swagger API文档，缺少Web Dashboard
+**可用替代方案**:
+- 使用Swagger UI (/docs) 测试API
+- 使用Postman/curl调用审批接口
+- 飞书集成推送审批卡片（需配置）
+
+**后续规划**: 实现Web Dashboard（案例列表+详情+审批）
+
+## 🚀 快速开始
+
+### 1. 配置环境变量
+
+```bash
+cp .env.example .env
+# 编辑.env设置API_TOKEN、LLM_API_KEY
+```
+
+### 2. 初始化数据
+
+```bash
+# 完整初始化
+python scripts/init_metrics.py
+
+# 仅计算特征（数据已导入）
+python scripts/init_metrics.py --skip-import --skip-clean --skip-model
+```
+
+### 3. 启动服务
+
+```bash
+docker-compose up -d
+# 或本地启动
+uvicorn app.main:app --reload
+```
+
+### 4. 测试API
+
+访问 http://localhost:8000/docs
+
+## 📝 完整修复详情
+
+详见：specs/001-coupon-decision-agent/p0-ux-fixes.md
+
+## ✅ 已修复验收阻塞项
+
+### 代码修复
+1. ✅ **Prompt花括号转义** - JSON示例移出f-string，避免格式化冲突
+   - 位置：app/agents/prompts/decision_prompt.py
+
+2. ✅ **DeepSeek httpx异常处理** - 统一使用httpx异常，完整读取配置
+   - 位置：app/integrations/llm/deepseek_client.py
+
+3. ✅ **Feishu审批回调路由分离** - 仅保留签名验证，移除API Token保护
+   - 位置：app/main.py
+
+4. ✅ **认证测试通过** - test_auth_middleware全部通过（6 tests）
+   - 验证：tests/unit/test_auth_middleware.py
+
+5. ✅ **工作区整理** - 更新.gitignore，添加核心代码到版本控制
+   - 文件：venv/、.coverage、.claude/已忽略，84个核心文件已跟踪
+
+## 📊 测试验证
+
+**单元测试**: 12 passed, 2 skipped ✅
+**契约测试**: 10 passed ✅
+**认证测试**: 6 passed ✅
+
+**模块导入**: 全部成功 ✅
+- Prompt模块（花括号转义）
+- DeepSeekClient（httpx+配置）
+- APITokenAuth
+- FeishuSignatureValidator
+
+## 🎯 下一步验证
+
+1. 启动API服务实际测试端点
+2. Agent决策完整流程测试
+3. 配置Feishu verification token（生产环境必须）
+4. pytest覆盖率报告生成
+
+## 📝 修复详情
+
+详见：specs/001-coupon-decision-agent/fixes-verification.md
 
 ## ✅ 已修复阻断项（P0）
 

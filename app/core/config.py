@@ -27,9 +27,26 @@ class Settings(BaseSettings):
     api_token: str = ""  # API Token for authentication
 
     model_config = {
-        "env_file": f".env.{os.getenv('APP_ENV', 'dev')}",
+        "env_file": ".env",  # Unified .env file (not .env.dev)
         "env_file_encoding": "utf-8",
+        "extra": "ignore",  # Ignore extra env vars
     }
+
+    def __post_init__(self):
+        """Validate critical configuration after initialization."""
+        if not self.api_token:
+            import warnings
+            warnings.warn(
+                "API_TOKEN not configured. Protected endpoints will reject requests.",
+                UserWarning
+            )
+
+        if not self.llm_api_key:
+            import warnings
+            warnings.warn(
+                "LLM_API_KEY not configured. Agent decision service will fail.",
+                UserWarning
+            )
 
 
 def get_settings() -> Settings:

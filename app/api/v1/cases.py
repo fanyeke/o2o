@@ -2,12 +2,14 @@
 
 Task: T093-T096
 Phase: 4 - DecisionCase Query APIs
+
+User approval endpoints added for direct approval without Feishu callback.
 """
 
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -15,6 +17,7 @@ from app.domain.application.decision_case import DecisionCase
 from app.domain.application.recommendation import Recommendation
 from app.domain.application.approval_log import ApprovalLog
 from app.domain.application.action_execution import ActionExecution
+from app.services.approval_service import ApprovalService
 from app.schemas.cases import (
     DecisionCaseListResponse,
     DecisionCaseDetailResponse,
@@ -24,6 +27,8 @@ from app.schemas.cases import (
     SuggestedAction,
     ApprovalLogItem,
     ActionExecutionItem,
+    ApprovalRequest,
+    ApprovalResponse,
 )
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -48,43 +53,16 @@ async def list_cases(
         case_type: Filter by case type
         start_date: Filter cases created after this date
         end_date: Filter cases created before this date
-        limit: Maximum number of results to return
-        offset: Number of results to skip
+        limit: Number of results to return
+        offset: Offset for pagination
         db: Database session
 
     Returns:
-        List of decision cases with pagination metadata
-
-    Raises:
-        HTTPException: If invalid filter parameters provided
+        DecisionCaseListResponse with total count and data list
     """
-    # Validate status if provided
-    valid_statuses = [
-        "pending",
-        "recommended",
-        "approved",
-        "rejected",
-        "executed",
-        "completed",
-        "failed",
-    ]
-    if status and status not in valid_statuses:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid status. Must be one of: {valid_statuses}",
-        )
-
-    # Validate case_type if provided
-    valid_case_types = ["商户异常", "券策略复核", "用户召回"]
-    if case_type and case_type not in valid_case_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid case_type. Must be one of: {valid_case_types}",
-        )
-
-    # Build query with filters
     query = db.query(DecisionCase)
 
+    # Apply filters
     if status:
         query = query.filter(DecisionCase.status == status)
 
@@ -103,17 +81,17 @@ async def list_cases(
     # Get total count
     total = query.count()
 
-    # Apply pagination and ordering
+    # Apply pagination
     cases = query.order_by(DecisionCase.created_at.desc()).offset(offset).limit(limit).all()
 
     # Convert to response format
-    case_responses = [
+    data = [
         DecisionCaseResponse(
             id=case.id,
             case_type=case.case_type,
-            severity_level=case.severity_level,
+            severity_level=case.severity_level or "",
             merchant_id=case.merchant_id,
-            trigger_rule_id=case.trigger_rule_id,
+            trigger_rule_id=case.trigger_rule_id or "",
             status=case.status,
             created_at=case.created_at,
             updated_at=case.updated_at,
@@ -121,12 +99,7 @@ async def list_cases(
         for case in cases
     ]
 
-    return DecisionCaseListResponse(
-        total=total,
-        limit=limit,
-        offset=offset,
-        data=case_responses,
-    )
+    return DecisionCaseListResponse(total=total, limit=limit, offset=offset, data=data)
 
 
 @router.get("/{case_id}", response_model=DecisionCaseDetailResponse)
@@ -134,40 +107,43 @@ async def get_case_detail(
     case_id: int,
     db: Session = Depends(get_db),
 ):
-    """Get detailed information about a specific decision case.
+    """Get detailed information for a decision case.
 
     Args:
-        case_id: ID of the decision case
+        case_id: Decision case ID
         db: Database session
 
     Returns:
-        Detailed case information including recommendation, approval logs, and action executions
+        DecisionCaseDetailResponse with recommendation, approval logs, and action executions
 
     Raises:
-        HTTPException: If case not found
+        HTTPException: 404 if case not found
     """
-    # Query case with related data
-    case = (
-        db.query(DecisionCase)
-        .filter(DecisionCase.id == case_id)
+    case = db.query(DecisionCase).filter(DecisionCase.id == case_id).first()
+
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Decision case {case_id} not found",
+        )
+
+    # Get latest recommendation (if exists)
+    latest_recommendation = (
+        db.query(Recommendation)
+        .filter(Recommendation.case_id == case_id)
+        .order_by(Recommendation.created_at.desc())
         .first()
     )
 
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-
-    # Get recommendation (latest one)
     recommendation_response = None
-    recommendations = db.query(Recommendation).filter(Recommendation.case_id == case_id).order_by(Recommendation.created_at.desc()).all()
-    if recommendations:
-        latest_recommendation = recommendations[0]
+    if latest_recommendation:
         recommendation_response = RecommendationResponse(
             id=latest_recommendation.id,
-            summary=latest_recommendation.summary,
+            summary=latest_recommendation.summary or "",
             evidence_list=[
                 EvidenceItem(
                     type=evidence.get("type", ""),
-                    content=evidence.get("content", ""),
+                    content=evidence.get("description", ""),  # Map description to content
                 )
                 for evidence in latest_recommendation.evidence_list
             ],
@@ -175,11 +151,11 @@ async def get_case_detail(
                 SuggestedAction(
                     action_type=action.get("action_type", ""),
                     params=action.get("params", {}),
-                    risk_level=action.get("risk_level", ""),
+                    risk_level=action.get("priority", ""),  # Map priority to risk_level
                 )
                 for action in latest_recommendation.suggested_actions
             ],
-            risk_alerts=latest_recommendation.risk_alerts,
+            risk_alerts=latest_recommendation.risk_alerts or "",
             confidence_score=latest_recommendation.confidence_score,
             requires_approval=latest_recommendation.requires_approval,
             created_at=latest_recommendation.created_at,
@@ -189,9 +165,9 @@ async def get_case_detail(
     approval_logs = db.query(ApprovalLog).filter(ApprovalLog.case_id == case_id).order_by(ApprovalLog.created_at.asc()).all()
     approval_log_responses = [
         ApprovalLogItem(
-            operator_name=log.operator_name,
+            operator_name=log.operator_name or "",
             action=log.action,
-            comment=log.comment,
+            comment=log.comment or "",
             created_at=log.created_at,
         )
         for log in approval_logs
@@ -211,10 +187,10 @@ async def get_case_detail(
     return DecisionCaseDetailResponse(
         id=case.id,
         case_type=case.case_type,
-        severity_level=case.severity_level,
+        severity_level=case.severity_level or "",
         merchant_id=case.merchant_id,
-        trigger_rule_id=case.trigger_rule_id,
-        trigger_metrics_snapshot=case.trigger_metrics_snapshot,
+        trigger_rule_id=case.trigger_rule_id or "",
+        trigger_metrics_snapshot=case.trigger_metrics_snapshot or {},
         status=case.status,
         recommendation=recommendation_response,
         approval_logs=approval_log_responses,
@@ -222,3 +198,109 @@ async def get_case_detail(
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
+
+
+@router.post("/{case_id}/approve", response_model=ApprovalResponse, status_code=status.HTTP_200_OK)
+async def approve_case(
+    case_id: int,
+    request: ApprovalRequest,
+    db: Session = Depends(get_db),
+):
+    """Approve a decision case directly (without Feishu callback).
+
+    User-friendly approval endpoint for manual approval through Dashboard.
+
+    Args:
+        case_id: Decision case ID
+        request: Approval request with operator info and comment
+        db: Database session
+
+    Returns:
+        ApprovalResponse with processing result
+
+    Raises:
+        HTTPException: 404 if case not found, 400 if invalid status
+    """
+    service = ApprovalService(db)
+
+    try:
+        result = service.process_approval(
+            case_id=case_id,
+            action_type="approve",
+            operator_id=request.operator_id,
+            operator_name=request.operator_name,
+            comment=request.comment,
+        )
+
+        return ApprovalResponse(
+            status="success",
+            message=result["message"],
+            case_id=result["case_id"],
+            new_status=result["new_status"],
+        )
+
+    except ValueError as e:
+        error_msg = str(e)
+        if "不存在" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": {"code": "NOT_FOUND", "message": error_msg}},
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "STATE_TRANSITION_ERROR", "message": error_msg}},
+            )
+
+
+@router.post("/{case_id}/reject", response_model=ApprovalResponse, status_code=status.HTTP_200_OK)
+async def reject_case(
+    case_id: int,
+    request: ApprovalRequest,
+    db: Session = Depends(get_db),
+):
+    """Reject a decision case directly (without Feishu callback).
+
+    User-friendly rejection endpoint for manual rejection through Dashboard.
+
+    Args:
+        case_id: Decision case ID
+        request: Approval request with operator info and comment
+        db: Database session
+
+    Returns:
+        ApprovalResponse with processing result
+
+    Raises:
+        HTTPException: 404 if case not found, 400 if invalid status
+    """
+    service = ApprovalService(db)
+
+    try:
+        result = service.process_approval(
+            case_id=case_id,
+            action_type="reject",
+            operator_id=request.operator_id,
+            operator_name=request.operator_name,
+            comment=request.comment,
+        )
+
+        return ApprovalResponse(
+            status="success",
+            message=result["message"],
+            case_id=result["case_id"],
+            new_status=result["new_status"],
+        )
+
+    except ValueError as e:
+        error_msg = str(e)
+        if "不存在" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": {"code": "NOT_FOUND", "message": error_msg}},
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "STATE_TRANSITION_ERROR", "message": error_msg}},
+            )

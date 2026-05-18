@@ -5,6 +5,8 @@ x-app-defaults: &app-defaults
     target: dev
   volumes:
     - .:/app
+  env_file:
+    - .env  # Load API_TOKEN, LLM_API_KEY from .env
   environment:
     - APP_ENV=dev
     - DATABASE_URL=postgresql+psycopg2://coupon_user:coupon_pass@postgres:5432/coupon_agent

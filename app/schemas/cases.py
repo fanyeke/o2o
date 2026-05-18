@@ -108,3 +108,20 @@ class DecisionCaseDetailResponse(BaseModel):
     )
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
+
+
+class ApprovalRequest(BaseModel):
+    """审批请求"""
+
+    operator_id: str = Field(..., description="审批人ID")
+    operator_name: Optional[str] = Field(None, description="审批人姓名")
+    comment: Optional[str] = Field(None, description="审批意见")
+
+
+class ApprovalResponse(BaseModel):
+    """审批响应"""
+
+    status: str = Field(..., description="处理状态（success/error）")
+    message: str = Field(..., description="处理消息")
+    case_id: int = Field(..., ge=1, description="案例ID")
+    new_status: str = Field(..., description="新的案例状态")
