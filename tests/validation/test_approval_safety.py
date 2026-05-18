@@ -33,7 +33,7 @@ def test_cannot_approve_pending_case(test_db):
     # Create a case with status='pending'
     test_db.execute(text("""
         INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
-        VALUES ('test_case_001', '商户异常', 'm001', 'medium', 'pending', NOW())
+        VALUES (1001, '商户异常', 'm001', 'medium', 'pending', NOW())
         ON CONFLICT (id) DO NOTHING
     """))
     test_db.commit()
@@ -43,7 +43,7 @@ def test_cannot_approve_pending_case(test_db):
     # Attempt to approve should fail
     try:
         approval_service.approve_case(
-            case_id='test_case_001',
+            case_id=1001,
             approver_id='test_approver',
             approval_comment='Test approval'
         )
@@ -59,13 +59,13 @@ def test_approve_creates_approval_log(test_db):
     # Create a case with status='recommended' and recommendation
     test_db.execute(text("""
         INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
-        VALUES ('test_case_002', '商户异常', 'm002', 'medium', 'recommended', NOW())
+        VALUES (1002, '商户异常', 'm002', 'medium', 'recommended', NOW())
         ON CONFLICT (id) DO UPDATE SET status='recommended'
     """))
 
     test_db.execute(text("""
         INSERT INTO application.recommendation (id, case_id, summary, evidence_list, suggested_actions, confidence_score, requires_approval, created_at)
-        VALUES ('rec_002', 'test_case_002', 'Test recommendation', '[]', '[{"type": "no_action"}]', 0.5, true, NOW())
+        VALUES (1002, 1002, 'Test recommendation', '[]', '[{"type": "no_action"}]', 0.5, true, NOW())
         ON CONFLICT (id) DO NOTHING
     """))
     test_db.commit()
@@ -74,7 +74,7 @@ def test_approve_creates_approval_log(test_db):
 
     # Approve the case
     result = approval_service.approve_case(
-        case_id='test_case_002',
+        case_id=1002,
         approver_id='test_approver',
         approval_comment='Test approval'
     )
@@ -82,7 +82,7 @@ def test_approve_creates_approval_log(test_db):
     # Verify ApprovalLog created
     log_count = test_db.execute(text("""
         SELECT COUNT(*) FROM application.approval_log
-        WHERE case_id = 'test_case_002' AND action = 'approve'
+        WHERE case_id = 1002 AND action = 'approve'
     """)).first()[0]
 
     assert log_count >= 1, "ApprovalLog must be created after approval"
@@ -93,12 +93,12 @@ def test_approve_creates_approval_log(test_db):
 def test_approve_creates_action_execution(test_db):
     """验证approve后必须生成ActionExecution."""
 
-    # Use the same case (test_case_002 already approved in previous test)
+    # Use the same case (1002 already approved in previous test)
 
     # Verify ActionExecution created
     action_count = test_db.execute(text("""
         SELECT COUNT(*) FROM application.action_execution
-        WHERE case_id = 'test_case_002'
+        WHERE case_id = 1002
     """)).first()[0]
 
     assert action_count >= 1, "ActionExecution must be created after approval"
@@ -112,13 +112,13 @@ def test_reject_does_not_execute(test_db):
     # Create a case with status='recommended'
     test_db.execute(text("""
         INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
-        VALUES ('test_case_003', '商户异常', 'm003', 'medium', 'recommended', NOW())
+        VALUES (1003, '商户异常', 'm003', 'medium', 'recommended', NOW())
         ON CONFLICT (id) DO UPDATE SET status='recommended'
     """))
 
     test_db.execute(text("""
         INSERT INTO application.recommendation (id, case_id, summary, evidence_list, suggested_actions, confidence_score, requires_approval, created_at)
-        VALUES ('rec_003', 'test_case_003', 'Test recommendation', '[]', '[{"type": "no_action"}]', 0.5, true, NOW())
+        VALUES (1003, 1003, 'Test recommendation', '[]', '[{"type": "no_action"}]', 0.5, true, NOW())
         ON CONFLICT (id) DO NOTHING
     """))
     test_db.commit()
@@ -127,7 +127,7 @@ def test_reject_does_not_execute(test_db):
 
     # Reject the case
     result = approval_service.reject_case(
-        case_id='test_case_003',
+        case_id=1003,
         approver_id='test_approver',
         rejection_reason='Test rejection'
     )
@@ -135,7 +135,7 @@ def test_reject_does_not_execute(test_db):
     # Verify NO ActionExecution created
     action_count = test_db.execute(text("""
         SELECT COUNT(*) FROM application.action_execution
-        WHERE case_id = 'test_case_003'
+        WHERE case_id = 1003
     """)).first()[0]
 
     assert action_count == 0, "Reject must NOT create ActionExecution"
@@ -146,14 +146,14 @@ def test_reject_does_not_execute(test_db):
 def test_duplicate_approval_idempotent(test_db):
     """验证重复审批不重复执行动作."""
 
-    # Use test_case_002 which was already approved
+    # Use 1002 which was already approved
 
     approval_service = ApprovalService(test_db)
 
     # Try to approve again (should handle gracefully)
     try:
         approval_service.approve_case(
-            case_id='test_case_002',
+            case_id=1002,
             approver_id='test_approver_2',
             approval_comment='Duplicate approval'
         )
@@ -161,7 +161,7 @@ def test_duplicate_approval_idempotent(test_db):
         # If succeeded, check that NO duplicate ActionExecution created
         action_count = test_db.execute(text("""
             SELECT COUNT(*) FROM application.action_execution
-            WHERE case_id = 'test_case_002'
+            WHERE case_id = 1002
         """)).first()[0]
 
         assert action_count == 1, \
@@ -180,13 +180,13 @@ def test_unknown_action_type_fails(test_db):
     # Create a case with invalid action type
     test_db.execute(text("""
         INSERT INTO application.decision_case (id, case_type, merchant_id, severity_level, status, created_at)
-        VALUES ('test_case_004', '商户异常', 'm004', 'medium', 'recommended', NOW())
+        VALUES (1004, '商户异常', 'm004', 'medium', 'recommended', NOW())
         ON CONFLICT (id) DO UPDATE SET status='recommended'
     """))
 
     test_db.execute(text("""
         INSERT INTO application.recommendation (id, case_id, summary, evidence_list, suggested_actions, confidence_score, requires_approval, created_at)
-        VALUES ('rec_004', 'test_case_004', 'Test recommendation', '[]',
+        VALUES (1004, 1004, 'Test recommendation', '[]',
                 '[{"type": "invalid_action_type", "params": {}}]', 0.5, true, NOW())
         ON CONFLICT (id) DO NOTHING
     """))
@@ -197,7 +197,7 @@ def test_unknown_action_type_fails(test_db):
     # Approve should handle unknown action gracefully
     try:
         result = approval_service.approve_case(
-            case_id='test_case_004',
+            case_id=1004,
             approver_id='test_approver',
             approval_comment='Approving invalid action'
         )
@@ -205,7 +205,7 @@ def test_unknown_action_type_fails(test_db):
         # Check ActionExecution status
         action_status = test_db.execute(text("""
             SELECT execution_status FROM application.action_execution
-            WHERE case_id = 'test_case_004'
+            WHERE case_id = 1004
             ORDER BY executed_at DESC
             LIMIT 1
         """)).first()

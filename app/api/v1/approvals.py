@@ -22,9 +22,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Create Feishu signature validation dependency
+# Create Feishu signature validation dependency with environment-aware validation
 settings = get_settings()
-feishu_validator = create_feishu_validator_dependency(settings.feishu_verification_token)
+feishu_validator = create_feishu_validator_dependency(
+    settings.feishu_verification_token,
+    is_production=settings.is_production
+)
 
 
 @router.post(

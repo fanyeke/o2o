@@ -23,8 +23,10 @@ import os
 sns.set_style('whitegrid')
 sns.set_context('talk')
 
-DATA_DIR = Path('/home/zzz/project/o2o/data')
-HTML_DIR = Path('/home/zzz/project/o2o/html')
+# Resolve paths relative to script location (project root)
+SCRIPT_DIR = Path(__file__).parent.resolve()
+DATA_DIR = SCRIPT_DIR / 'data'
+HTML_DIR = SCRIPT_DIR / 'html'
 CHARTS_DIR = HTML_DIR / 'charts'
 CHARTS_DIR.mkdir(exist_ok=True)
 
