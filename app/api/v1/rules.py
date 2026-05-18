@@ -149,11 +149,8 @@ async def list_rules():
 
     settings = get_settings()
 
-    # Load rules from configuration directory
-    rules_dir = Path(
-        "/app/config/rules" if settings.app_env == "dev"
-        else "/home/zzz/project/o2o/config/rules"
-    )
+    # Use configured rules directory (relative path resolved to absolute)
+    rules_dir = settings.get_rules_dir()
 
     try:
         rules = load_rules(rules_dir)

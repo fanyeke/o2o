@@ -15,16 +15,24 @@ logger = logging.getLogger(__name__)
 class FeishuSignatureValidator:
     """Validate Feishu webhook request signatures."""
 
-    def __init__(self, verification_token: str, max_timestamp_diff: int = 300):
+    def __init__(
+        self,
+        verification_token: str,
+        max_timestamp_diff: int = 300,
+        is_production: bool = False
+    ):
         """
         Initialize Feishu signature validator.
 
         Args:
             verification_token: Feishu verification token from app config
             max_timestamp_diff: Maximum allowed timestamp difference in seconds (default: 5 minutes)
+            is_production: If True, enforces strict validation. If False (dev mode),
+                         allows skipping validation when token is not configured.
         """
         self.verification_token = verification_token
         self.max_timestamp_diff = max_timestamp_diff
+        self.is_production = is_production
 
     async def validate_request(self, request: Request) -> bool:
         """
@@ -39,9 +47,31 @@ class FeishuSignatureValidator:
         Raises:
             HTTPException: If signature validation fails
         """
+        # Check if verification token is configured
         if not self.verification_token:
-            logger.warning("Feishu verification token not configured, skipping signature validation")
-            return True  # Skip validation if not configured (dev mode)
+            if self.is_production:
+                # CRITICAL: In production, missing token means misconfiguration
+                logger.error(
+                    "Feishu verification token not configured in production environment. "
+                    "This is a security risk. Set FEISHU_VERIFICATION_TOKEN environment variable."
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail={
+                        "error": {
+                            "code": "MISCONFIGURED_WEBHOOK",
+                            "message": "Webhook validation is misconfigured. Contact administrator.",
+                            "details": {}
+                        }
+                    }
+                )
+            else:
+                # In development mode, allow skipping validation
+                logger.warning(
+                    "Feishu verification token not configured. "
+                    "Skipping signature validation (development mode only)."
+                )
+                return True
 
         # Get headers
         timestamp = request.headers.get("X-Lark-Timestamp")
@@ -127,17 +157,25 @@ class FeishuSignatureValidator:
         return True
 
 
-def create_feishu_validator_dependency(verification_token: str):
+def create_feishu_validator_dependency(
+    verification_token: str,
+    is_production: bool = False
+):
     """
     Create a FastAPI dependency for Feishu signature validation.
 
     Args:
         verification_token: Feishu verification token from config
+        is_production: If True, enforces strict validation. If False (dev mode),
+                     allows skipping validation when token is not configured.
 
     Returns:
         Callable validator for use in FastAPI endpoints
     """
-    validator = FeishuSignatureValidator(verification_token)
+    validator = FeishuSignatureValidator(
+        verification_token,
+        is_production=is_production
+    )
 
     async def validate_dependency(request: Request) -> bool:
         return await validator.validate_request(request)

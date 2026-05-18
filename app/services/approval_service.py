@@ -38,6 +38,58 @@ class ApprovalService:
         self.action_repo = ActionExecutionRepository(db)
         self.mock_action_service = MockActionService(db)
 
+    def approve_case(
+        self,
+        case_id: str,
+        approver_id: str,
+        approval_comment: Optional[str] = None,
+    ) -> dict:
+        """Approve a decision case.
+
+        Convenience method for approval workflow.
+
+        Args:
+            case_id: Decision case ID (string for compatibility with tests)
+            approver_id: Approver ID
+            approval_comment: Approval comment
+
+        Returns:
+            Processing result
+        """
+        return self.process_approval(
+            case_id=int(case_id) if isinstance(case_id, str) else case_id,
+            action_type="approve",
+            operator_id=approver_id,
+            operator_name=None,
+            comment=approval_comment,
+        )
+
+    def reject_case(
+        self,
+        case_id: str,
+        approver_id: str,
+        rejection_reason: Optional[str] = None,
+    ) -> dict:
+        """Reject a decision case.
+
+        Convenience method for rejection workflow.
+
+        Args:
+            case_id: Decision case ID (string for compatibility with tests)
+            approver_id: Approver ID
+            rejection_reason: Rejection reason
+
+        Returns:
+            Processing result
+        """
+        return self.process_approval(
+            case_id=int(case_id) if isinstance(case_id, str) else case_id,
+            action_type="reject",
+            operator_id=approver_id,
+            operator_name=None,
+            comment=rejection_reason,
+        )
+
     def process_approval(
         self,
         case_id: int,
@@ -221,14 +273,54 @@ class ApprovalService:
     ) -> None:
         """Execute mock actions for approved case.
 
+        Handles various action formats and ensures graceful failure for unknown types.
+        Ensures idempotency by checking for existing executions.
+
         Args:
             case_id: Decision case ID
             recommendation_id: Recommendation ID
             suggested_actions: List of suggested actions
         """
         for action in suggested_actions:
-            action_type = action.get("action_type")
+            # Handle both "type" and "action_type" fields for compatibility
+            action_type = action.get("type") or action.get("action_type")
             action_params = action.get("params", {})
+
+            if not action_type:
+                logger.error(f"Action missing type field: {action}")
+                self.action_repo.create(
+                    case_id=case_id,
+                    recommendation_id=recommendation_id,
+                    action_type="unknown",
+                    action_params=action,
+                    execution_status="failed",
+                    execution_result="动作缺少类型字段",
+                    duration_ms=0,
+                )
+                continue
+
+            # Handle "no_action" type - do nothing
+            if action_type == "no_action":
+                logger.info(f"No action needed for case {case_id}")
+                self.action_repo.create(
+                    case_id=case_id,
+                    recommendation_id=recommendation_id,
+                    action_type="no_action",
+                    action_params=action_params,
+                    execution_status="success",
+                    execution_result="无需执行动作",
+                    duration_ms=0,
+                )
+                continue
+
+            # Check for existing execution (idempotency)
+            existing = self.action_repo.find_by_case_and_type(case_id, action_type)
+            if existing:
+                logger.info(
+                    f"Action {action_type} already executed for case {case_id}, "
+                    f"status: {existing.execution_status}. Skipping duplicate execution."
+                )
+                continue
 
             try:
                 result = self.mock_action_service.execute_action(
@@ -243,6 +335,20 @@ class ApprovalService:
                     f"result: {result['status']}"
                 )
 
+            except ValueError as e:
+                # Unknown action type - record as failed
+                logger.error(
+                    f"Unknown action type: {action_type} for case {case_id}, error: {e}"
+                )
+                self.action_repo.create(
+                    case_id=case_id,
+                    recommendation_id=recommendation_id,
+                    action_type=action_type,
+                    action_params=action_params,
+                    execution_status="failed",
+                    execution_result=f"未知动作类型: {action_type}",
+                    duration_ms=0,
+                )
             except Exception as e:
                 logger.error(
                     f"Mock action execution failed: {action_type} for case {case_id}, "

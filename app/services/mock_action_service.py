@@ -188,10 +188,12 @@ class MockActionService:
     ) -> Dict[str, Any]:
         """Execute action based on action type.
 
+        Supports both Chinese and English action type names for compatibility.
+
         Args:
             case_id: Decision case ID
             recommendation_id: Recommendation ID
-            action_type: Action type (暂停活动, 调整折扣, 发送优惠券)
+            action_type: Action type (暂停活动/pause_coupon_distribution, 调整折扣/adjust_discount, 发送优惠券/send_coupon, etc.)
             action_params: Action parameters
 
         Returns:
@@ -200,24 +202,35 @@ class MockActionService:
         Raises:
             ValueError: If action type is unknown
         """
-        if action_type == "暂停活动":
+        # Map English action types to Chinese (for test compatibility)
+        action_type_map = {
+            "pause_coupon_distribution": "暂停活动",
+            "adjust_discount": "调整折扣",
+            "send_coupon": "发送优惠券",
+            "adjust_targeting": "调整人群",
+        }
+
+        # Normalize action type
+        normalized_type = action_type_map.get(action_type, action_type)
+
+        if normalized_type == "暂停活动":
             return self.execute_pause_activity(
                 case_id, recommendation_id, action_params
             )
-        elif action_type == "调整折扣":
+        elif normalized_type == "调整折扣":
             return self.execute_adjust_discount(
                 case_id, recommendation_id, action_params
             )
-        elif action_type == "发送优惠券":
+        elif normalized_type == "发送优惠券":
             return self.execute_send_coupon(
                 case_id, recommendation_id, action_params
             )
-        elif action_type == "调整人群":
+        elif normalized_type == "调整人群":
             # Placeholder for future implementation
-            logger.warning(f"Action type '{action_type}' not implemented yet")
+            logger.warning(f"Action type '{normalized_type}' not implemented yet")
             return {
                 "status": "failed",
-                "message": f"动作类型 '{action_type}' 尚未实现",
+                "message": f"动作类型 '{normalized_type}' 尚未实现",
                 "duration_ms": 0,
             }
         else:

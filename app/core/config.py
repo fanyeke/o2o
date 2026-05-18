@@ -1,4 +1,6 @@
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
+from pathlib import Path
 import os
 
 
@@ -26,27 +28,87 @@ class Settings(BaseSettings):
     # API Token for protected endpoints
     api_token: str = ""  # API Token for authentication
 
+    # Rules configuration directory (relative path or absolute)
+    rules_dir: str = "config/rules"
+
     model_config = {
         "env_file": ".env",  # Unified .env file (not .env.dev)
         "env_file_encoding": "utf-8",
         "extra": "ignore",  # Ignore extra env vars
     }
 
-    def __post_init__(self):
-        """Validate critical configuration after initialization."""
+    @model_validator(mode="after")
+    def validate_critical_config(self) -> "Settings":
+        """Validate critical configuration after initialization.
+
+        In production environment (app_env == 'prod'), missing critical
+        configurations will raise an error to prevent insecure deployments.
+        In development, warnings are issued instead.
+        """
+        is_production = self.app_env == "prod"
+
+        # Validate API Token
         if not self.api_token:
-            import warnings
-            warnings.warn(
-                "API_TOKEN not configured. Protected endpoints will reject requests.",
-                UserWarning
+            if is_production:
+                raise ValueError(
+                    "API_TOKEN is required in production environment. "
+                    "Set the API_TOKEN environment variable."
+                )
+            else:
+                import warnings
+                warnings.warn(
+                    "API_TOKEN not configured. Protected endpoints will reject requests.",
+                    UserWarning
+                )
+
+        # Validate LLM API Key
+        if not self.llm_api_key:
+            if is_production:
+                raise ValueError(
+                    "LLM_API_KEY is required in production environment. "
+                    "Set the LLM_API_KEY environment variable."
+                )
+            else:
+                import warnings
+                warnings.warn(
+                    "LLM_API_KEY not configured. Agent decision service will fail.",
+                    UserWarning
+                )
+
+        # Validate Feishu verification token in production
+        if is_production and not self.feishu_verification_token:
+            raise ValueError(
+                "FEISHU_VERIFICATION_TOKEN is required in production environment. "
+                "Set the FEISHU_VERIFICATION_TOKEN environment variable."
             )
 
-        if not self.llm_api_key:
-            import warnings
-            warnings.warn(
-                "LLM_API_KEY not configured. Agent decision service will fail.",
-                UserWarning
-            )
+        return self
+
+    def get_rules_dir(self) -> Path:
+        """Get the rules directory as an absolute path.
+
+        Returns:
+            Path object pointing to the rules directory.
+            If rules_dir is relative, resolves relative to project root.
+        """
+        rules_path = Path(self.rules_dir)
+        if rules_path.is_absolute():
+            return rules_path
+
+        # Resolve relative path from project root
+        # Project root is the directory containing 'app' package
+        project_root = Path(__file__).parent.parent.parent
+        return project_root / self.rules_dir
+
+    @property
+    def is_production(self) -> bool:
+        """Check if running in production environment."""
+        return self.app_env == "prod"
+
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development environment."""
+        return self.app_env == "dev"
 
 
 def get_settings() -> Settings:

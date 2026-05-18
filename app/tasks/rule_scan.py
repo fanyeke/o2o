@@ -63,11 +63,8 @@ def rule_scan_task(
         Exception: On failure, retries up to 3 times with 60-second countdown
     """
     try:
-        # Load rules from YAML files
-        rules_dir = Path(
-            "/app/config/rules" if settings.app_env == "dev"
-            else "/home/zzz/project/o2o/config/rules"
-        )
+        # Load rules from YAML files using configured directory
+        rules_dir = settings.get_rules_dir()
 
         rules = load_rules(rules_dir, rule_ids)
 

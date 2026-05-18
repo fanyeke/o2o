@@ -139,8 +139,9 @@ def test_agent_tools_registry():
 def test_agent_prompt_formatting():
     """Verify Agent prompt formatting doesn't crash with tool outputs."""
     # Import at module level to check structure exists
-    import sys
-    sys.path.insert(0, '/home/zzz/project/o2o')
+    # Use relative path instead of hardcoded absolute path
+    project_root = Path(__file__).parent.parent.parent
+    sys.path.insert(0, str(project_root))
     from app.agents.prompts import decision_prompt
 
     # Mock tool output matching actual structure
