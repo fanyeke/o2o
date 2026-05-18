@@ -11,7 +11,7 @@ Usage:
 
 # Import all models to register them with Base.metadata
 from app.domain.staging import CouponReceiptEvent, ConsumptionEvent  # noqa: F401
-from app.domain.feature import MerchantMetrics, UserMetrics, CouponMetrics  # noqa: F401
+from app.domain.feature import MerchantMetrics, UserMetrics, CouponMetrics, ReceiptTrainingFeatures  # noqa: F401
 from app.domain.raw.offline_train import OfflineTrain  # noqa: F401
 from app.domain.raw.offline_test import OfflineTest  # noqa: F401
 from app.domain.application import DecisionCase, Recommendation, ActionExecution, ApprovalLog  # noqa: F401
