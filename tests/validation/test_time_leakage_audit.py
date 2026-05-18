@@ -35,8 +35,8 @@ def test_user_receipts_time_leakage():
               SELECT COUNT(*)
               FROM staging.coupon_receipt_event cre
               WHERE cre.user_id = rtf.user_id
-                AND cre.date_received < rtf.as_of_date
-                AND cre.date_received >= rtf.as_of_date - INTERVAL '30 days'
+                AND cre.date_received < as_of_date
+                AND cre.date_received >= as_of_date - INTERVAL '30 days'
           )
     """)).first()
 
@@ -59,9 +59,9 @@ def test_user_redeemed_time_leakage():
               FROM staging.coupon_receipt_event cre
               WHERE cre.user_id = rtf.user_id
                 AND cre.is_redeemed = true
-                AND cre.date_redeemed < rtf.as_of_date
-                AND cre.date_received < rtf.as_of_date
-                AND cre.date_received >= rtf.as_of_date - INTERVAL '30 days'
+                AND cre.date_redeemed < as_of_date
+                AND cre.date_received < as_of_date
+                AND cre.date_received >= as_of_date - INTERVAL '30 days'
           )
     """)).first()
 
@@ -78,7 +78,7 @@ def test_merchant_receipts_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT receipt_id, merchant_receipts_30d_before, rtf.merchant_id, rtf.as_of_date
+            SELECT receipt_id, merchant_receipts_30d_before, merchant_id, as_of_date
             FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
             WHERE merchant_receipts_30d_before > 0
         ) sample
@@ -104,7 +104,7 @@ def test_merchant_redeemed_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT receipt_id, merchant_redeemed_count_30d_before, rtf.merchant_id, rtf.as_of_date
+            SELECT receipt_id, merchant_redeemed_count_30d_before, merchant_id, as_of_date
             FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
             WHERE merchant_redeemed_count_30d_before > 0
         ) sample
@@ -132,7 +132,7 @@ def test_coupon_receipts_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT receipt_id, coupon_total_receipts_before, rtf.coupon_id, rtf.as_of_date
+            SELECT receipt_id, coupon_total_receipts_before, coupon_id, as_of_date
             FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
             WHERE coupon_total_receipts_before > 0
         ) sample
@@ -157,7 +157,7 @@ def test_coupon_redeemed_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT receipt_id, coupon_redeemed_count_before, rtf.coupon_id, rtf.as_of_date
+            SELECT receipt_id, coupon_redeemed_count_before, coupon_id, as_of_date
             FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
             WHERE coupon_redeemed_count_before > 0
         ) sample
@@ -190,8 +190,8 @@ def test_no_current_receipt_in_features():
               SELECT COUNT(*)
               FROM staging.coupon_receipt_event cre
               WHERE cre.user_id = rtf.user_id
-                AND cre.date_received < rtf.as_of_date  -- 严格小于，不包括当天
-                AND cre.date_received >= rtf.as_of_date - INTERVAL '30 days'
+                AND cre.date_received < as_of_date  -- 严格小于，不包括当天
+                AND cre.date_received >= as_of_date - INTERVAL '30 days'
           )
     """)).first()
 
