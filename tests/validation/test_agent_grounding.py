@@ -48,8 +48,9 @@ TEST_CASES = [
                     "total_receipts_30d": 500
                 },
                 "evidence": [
-                    {"type": "rate_drop", "content": "核销率下降57%"},
-                    {"type": "volume", "content": "发券量500张"}
+                    {"type": "rate_drop", "description": "核销率下降57%", "content": "核销率下降57%"},
+                    {"type": "volume", "description": "发券量500张", "content": "发券量500张"},
+                    {"type": "comparison", "description": "对比历史30天数据", "content": "对比历史30天数据"}
                 ]
             }
         }
@@ -70,8 +71,9 @@ TEST_CASES = [
                     "total_receipts_30d": 300
                 },
                 "evidence": [
-                    {"type": "discount", "content": "平均折扣45%"},
-                    {"type": "conversion", "content": "核销率仅12%"}
+                    {"type": "discount", "description": "平均折扣45%", "content": "平均折扣45%"},
+                    {"type": "conversion", "description": "核销率仅12%", "content": "核销率仅12%"},
+                    {"type": "volume", "description": "发券量300张", "content": "发券量300张"}
                 ]
             },
             "coupon_conversion": {
@@ -101,7 +103,10 @@ TEST_CASES = [
         "tool_results_mock": {
             "merchant_metrics": {
                 "error": "Merchant 'm_missing' not found",
-                "merchant_id": "m_missing"
+                "merchant_id": "m_missing",
+                "evidence": [
+                    {"type": "error", "description": "商户数据缺失", "content": "商户数据缺失"}
+                ]
             }
         }
     },
