@@ -78,7 +78,7 @@ def test_merchant_receipts_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT rtf.receipt_id, rtf.merchant_receipts_30d_before, rtf.merchant_id, rtf.as_of_date
+            SELECT receipt_id, merchant_receipts_30d_before, rtf.merchant_id, rtf.as_of_date
             FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
             WHERE merchant_receipts_30d_before > 0
         ) sample
@@ -104,19 +104,18 @@ def test_merchant_redeemed_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT rtf.receipt_id, rtf.merchant_redeemed_count_30d_before
-            FROM feature.receipt_training_features rtf
-            WHERE rtf.merchant_redeemed_count_30d_before > 0
-            TABLESAMPLE SYSTEM (0.01)
+            SELECT receipt_id, merchant_redeemed_count_30d_before, rtf.merchant_id, rtf.as_of_date
+            FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
+            WHERE merchant_redeemed_count_30d_before > 0
         ) sample
         WHERE sample.merchant_redeemed_count_30d_before != (
             SELECT COUNT(*)
             FROM staging.coupon_receipt_event cre
-            WHERE cre.merchant_id = (SELECT merchant_id FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+            WHERE cre.merchant_id = sample.merchant_id
               AND cre.is_redeemed = true
-              AND cre.date_redeemed < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
-              AND cre.date_received < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
-              AND cre.date_received >= (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id) - INTERVAL '30 days'
+              AND cre.date_redeemed < sample.as_of_date
+              AND cre.date_received < sample.as_of_date
+              AND cre.date_received >= sample.as_of_date - INTERVAL '30 days'
         )
     """)).first()
 
@@ -133,16 +132,15 @@ def test_coupon_receipts_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT rtf.receipt_id, rtf.coupon_total_receipts_before
-            FROM feature.receipt_training_features rtf
-            WHERE rtf.coupon_total_receipts_before > 0
-            TABLESAMPLE SYSTEM (0.01)
+            SELECT receipt_id, coupon_total_receipts_before, rtf.coupon_id, rtf.as_of_date
+            FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
+            WHERE coupon_total_receipts_before > 0
         ) sample
         WHERE sample.coupon_total_receipts_before != (
             SELECT COUNT(*)
             FROM staging.coupon_receipt_event cre
-            WHERE cre.coupon_id = (SELECT coupon_id FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
-              AND cre.date_received < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+            WHERE cre.coupon_id = sample.coupon_id
+              AND cre.date_received < sample.as_of_date
         )
     """)).first()
 
@@ -159,18 +157,17 @@ def test_coupon_redeemed_time_leakage():
     sample_check = db.execute(text("""
         SELECT COUNT(*) as violations
         FROM (
-            SELECT rtf.receipt_id, rtf.coupon_redeemed_count_before
-            FROM feature.receipt_training_features rtf
-            WHERE rtf.coupon_redeemed_count_before > 0
-            TABLESAMPLE SYSTEM (0.01)
+            SELECT receipt_id, coupon_redeemed_count_before, rtf.coupon_id, rtf.as_of_date
+            FROM feature.receipt_training_features TABLESAMPLE SYSTEM (0.01)
+            WHERE coupon_redeemed_count_before > 0
         ) sample
         WHERE sample.coupon_redeemed_count_before != (
             SELECT COUNT(*)
             FROM staging.coupon_receipt_event cre
-            WHERE cre.coupon_id = (SELECT coupon_id FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+            WHERE cre.coupon_id = sample.coupon_id
               AND cre.is_redeemed = true
-              AND cre.date_redeemed < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
-              AND cre.date_received < (SELECT as_of_date FROM feature.receipt_training_features WHERE receipt_id = sample.receipt_id)
+              AND cre.date_redeemed < sample.as_of_date
+              AND cre.date_received < sample.as_of_date
         )
     """)).first()
 
