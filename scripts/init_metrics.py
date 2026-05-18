@@ -32,7 +32,7 @@ from app.core.database import get_db
 from app.services.data_cleaning_service import DataCleaningService
 from app.features.merchant_features import MerchantFeatureCalculator
 from app.features.user_features import calculate_user_metrics
-from app.features.coupon_features import calculate_coupon_metrics
+from app.features.coupon_features import CouponFeatureCalculator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def step_import_data():
         logger.info("Please download the dataset and place it in data/offline_train.csv")
         return False
 
-    cmd = ["python", "scripts/import_dataset.py"]
+    cmd = [sys.executable, "scripts/import_dataset.py"]
     if test_csv.exists():
         cmd.extend(["--train", str(train_csv), "--test", str(test_csv)])
     else:
@@ -100,27 +100,34 @@ def step_calculate_features():
 
     db = next(get_db())
     try:
-        # Merchant metrics
+        from sqlalchemy import text
+
+        # Merchant metrics - use save method
         logger.info("Calculating merchant metrics...")
         merchant_calc = MerchantFeatureCalculator(db)
-        merchant_metrics = merchant_calc.calculate_merchant_metrics()
-        logger.info(f"✓ Merchant metrics: {len(merchant_metrics)} merchants")
+        merchant_result = merchant_calc.save_merchant_metrics()
+        logger.info(f"✓ Merchant metrics: {merchant_result.get('merchants_processed', 0)} merchants")
 
-        # User metrics
+        # User metrics - calculate and bulk save
         logger.info("Calculating user metrics...")
         user_metrics = calculate_user_metrics(db)
+        db.execute(text("TRUNCATE TABLE feature.user_metrics"))
+        db.bulk_save_objects(user_metrics)
         logger.info(f"✓ User metrics: {len(user_metrics)} users")
 
-        # Coupon metrics
+        # Coupon metrics - use save method
         logger.info("Calculating coupon metrics...")
-        coupon_metrics = calculate_coupon_metrics(db)
-        logger.info(f"✓ Coupon metrics: {len(coupon_metrics)} coupons")
+        coupon_calc = CouponFeatureCalculator(db)
+        coupon_result = coupon_calc.save_coupon_metrics()
+        logger.info(f"✓ Coupon metrics: {coupon_result.get('coupons_processed', 0)} coupons")
 
         db.commit()
         logger.info("✓ Feature calculation completed")
         return True
     except Exception as e:
         logger.error(f"Feature calculation failed: {e}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
         return False
     finally:
@@ -135,7 +142,7 @@ def step_train_model():
 
     import subprocess
 
-    cmd = ["python", "scripts/train_model.py"]
+    cmd = [sys.executable, "scripts/train_model.py"]
 
     try:
         subprocess.run(cmd, check=True)

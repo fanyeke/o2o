@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.agents.tools.merchant_metrics_tool import get_merchant_metrics
 from app.agents.tools.coupon_conversion_tool import get_coupon_conversion
+from app.agents.tools.user_metrics_tool import get_user_metrics
+from app.agents.tools.recent_receipts_tool import get_recent_receipts
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,25 @@ AVAILABLE_TOOLS = {
         "parameters": {
             "coupon_id": "Coupon ID to query (optional)",
             "merchant_id": "Merchant ID to query all coupons (optional)",
+        },
+    },
+    "get_user_metrics": {
+        "function": get_user_metrics,
+        "description": "Get user engagement metrics including receipt counts, "
+                       "redeemed rates, distance preference, and activity level.",
+        "parameters": {
+            "user_id": "User ID to query (required)",
+        },
+    },
+    "get_recent_receipts": {
+        "function": get_recent_receipts,
+        "description": "Get recent receipt events for a merchant or user, "
+                       "showing recent coupon distribution and redemption status.",
+        "parameters": {
+            "merchant_id": "Merchant ID to query (optional)",
+            "user_id": "User ID to query (optional)",
+            "days": "Number of recent days to query (default: 7)",
+            "limit": "Maximum receipts to return (default: 20)",
         },
     },
 }
@@ -66,6 +87,8 @@ def execute_tool(db: Session, tool_name: str, **kwargs) -> Any:
 __all__ = [
     "get_merchant_metrics",
     "get_coupon_conversion",
+    "get_user_metrics",
+    "get_recent_receipts",
     "execute_tool",
     "AVAILABLE_TOOLS",
 ]

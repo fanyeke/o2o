@@ -164,18 +164,18 @@ def _format_tool_results(tool_results: Dict[str, Any]) -> str:
 
     if "coupon_conversion" in tool_results:
         coupon_data = tool_results["coupon_conversion"]
-        if coupon_data:
+        if coupon_data and "coupons" in coupon_data:
             coupon_details = "\n".join([
-                f"  - {c['coupon_id']}: {c['discount_type']}, "
-                f"核销率 {c['redeemed_rate']:.2%}, "
-                f"平均核销天数 {c['avg_redeem_days']:.1f}天"
+                f"  - {c['coupon_id']}: {c.get('conversion_metrics', {}).get('discount_type', '未知')}, "
+                f"核销率 {c.get('conversion_metrics', {}).get('redeemed_rate', 0):.2%}, "
+                f"平均核销天数 {c.get('conversion_metrics', {}).get('avg_redeem_days', 0):.1f}天"
                 for c in coupon_data.get("coupons", [])[:5]  # Limit to top 5
             ])
 
             sections.append(f"""### 优惠券转化数据
-- 商户ID: {coupon_data['merchant_id']}
-- 总券类型数: {coupon_data['total_coupons']}
-- 平均核销率: {coupon_data['avg_redeem_rate']:.2%}
+- 商户ID: {coupon_data.get('merchant_id', 'N/A')}
+- 总券类型数: {coupon_data.get('total_coupons', 0)}
+- 平均核销率: {sum([c.get('conversion_metrics', {}).get('redeemed_rate', 0) for c in coupon_data.get('coupons', [])]) / max(len(coupon_data.get('coupons', [])), 1):.2%}
 
 券详情（前5个）:
 {coupon_details}
